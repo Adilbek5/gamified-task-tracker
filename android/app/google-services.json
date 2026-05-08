@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "700026515295",
+    "firebase_url": "https://gamificationtasktracker-default-rtdb.firebaseio.com",
+    "project_id": "gamificationtasktracker",
+    "storage_bucket": "gamificationtasktracker.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700026515295:android:adf8d5ee47b40253e390ea",
+        "android_client_info": {
+          "package_name": "com.gamified.tasktracker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "700026515295-ia9m282e23ab9skjbtgalebu1uk4pej9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gamified.tasktracker",
+            "certificate_hash": "557eeccd7471f0f456c81627ee1b8d7f995ff4fd"
+          }
+        },
+        {
+          "client_id": "700026515295-r43512r09vjq19u3gic3ng9tqnlp8v4m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUGJWIjjmUXVu8qo99RWE0RLLwB1ife2c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "700026515295-r43512r09vjq19u3gic3ng9tqnlp8v4m.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "700026515295-jccsakbmjc575puvedkc8d24bov6mnok.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.flutterProject"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

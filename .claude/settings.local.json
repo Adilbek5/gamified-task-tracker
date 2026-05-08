@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze:*)",
+      "Bash(flutter pub:*)",
+      "Bash(grep -v \"lib\\\\\\\\\\\\\\\\main.dart\")",
+      "Bash(grep -v \"lib\\\\\\\\\\\\\\\\ui\\\\\\\\\\\\\\\\screens\\\\\\\\\\\\\\\\tasks\\\\\\\\\\\\\\\\task_list_screen.dart:97\")",
+      "Bash(grep -Ev \"lib\\\\\\\\\\\\\\\\main\\\\.dart\")"
+    ]
+  }
+}
