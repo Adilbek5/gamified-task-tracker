@@ -13,6 +13,7 @@ class TaskModel {
   final String? assignedUserName;
   final DateTime? completedAt;
   final int xpEarned;
+  final int progress;
 
   const TaskModel({
     required this.id,
@@ -27,6 +28,7 @@ class TaskModel {
     this.assignedUserName,
     this.completedAt,
     this.xpEarned = 0,
+    this.progress = 0,
   });
 
   /// Returns true if [userId] is allowed to complete this task.
@@ -41,7 +43,7 @@ class TaskModel {
     int? difficulty, DateTime? deadline, TaskStatus? status,
     String? createdBy, String? teamId,
     String? assignedUserId, String? assignedUserName,
-    DateTime? completedAt, int? xpEarned,
+    DateTime? completedAt, int? xpEarned, int? progress,
   }) =>
       TaskModel(
         id: id ?? this.id,
@@ -56,6 +58,7 @@ class TaskModel {
         assignedUserName: assignedUserName ?? this.assignedUserName,
         completedAt: completedAt ?? this.completedAt,
         xpEarned: xpEarned ?? this.xpEarned,
+        progress: progress ?? this.progress,
       );
 
   Map<String, dynamic> toMap() => {
@@ -71,6 +74,7 @@ class TaskModel {
         'assigned_user_name': assignedUserName ?? '',
         'completed_at': completedAt?.toIso8601String() ?? '',
         'xp_earned': xpEarned,
+        'progress': progress,
       };
 
   factory TaskModel.fromMap(Map<String, dynamic> m) {
@@ -90,6 +94,7 @@ class TaskModel {
       assignedUserName: m['assigned_user_name']?.toString(),
       completedAt: _parseDateOrNull(m['completed_at']),
       xpEarned: _parseInt(m['xp_earned'], 0),
+      progress: _parseInt(m['progress'], 0),
     );
   }
 

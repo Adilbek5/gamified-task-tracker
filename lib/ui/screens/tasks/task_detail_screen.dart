@@ -1,9 +1,14 @@
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../data/database/app_database.dart';
+import '../../../data/models/subtask_model.dart';
 import '../../../data/models/task_model.dart';
+import '../../../data/models/user_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/challenge_provider.dart';
 import '../../../providers/gamification_provider.dart';
@@ -12,17 +17,28 @@ import '../../../providers/team_provider.dart';
 import '../../widgets/circular_progress_widget.dart';
 import '../../widgets/overlapping_avatars.dart';
 
-class TaskDetailScreen extends StatelessWidget {
+class TaskDetailScreen extends StatefulWidget {
   final TaskModel task;
 
   const TaskDetailScreen({super.key, required this.task});
 
-  // ── helpers ──────────────────────────────────────────
+  @override
+  State<TaskDetailScreen> createState() => _TaskDetailScreenState();
+}
+
+class _TaskDetailScreenState extends State<TaskDetailScreen> {
+  List<SubtaskModel> _subtasks = [];
+  bool _loadingSubtasks = true;
+  final _subtaskController = TextEditingController();
+
+  // ── computed helpers ────────────────────────────────────
 
   double get _progress {
-    switch (task.status) {
-      case TaskStatus.completed:
-        return 1.0;
+    if (widget.task.status == TaskStatus.completed) return 1.0;
+    if (!_loadingSubtasks && _subtasks.isNotEmpty) {
+      return _subtasks.where((s) => s.isCompleted).length / _subtasks.length;
+    }
+    switch (widget.task.status) {
       case TaskStatus.inProgress:
         return 0.5;
       default:
@@ -31,7 +47,7 @@ class TaskDetailScreen extends StatelessWidget {
   }
 
   Color get _progressColor {
-    switch (task.status) {
+    switch (widget.task.status) {
       case TaskStatus.completed:
         return AppColors.success;
       case TaskStatus.overdue:
@@ -42,21 +58,27 @@ class TaskDetailScreen extends StatelessWidget {
   }
 
   String get _centerText {
-    if (task.status == TaskStatus.overdue) {
-      final days = DateTime.now().difference(task.deadline).inDays;
+    if (widget.task.status == TaskStatus.completed) return '100%';
+    if (!_loadingSubtasks && _subtasks.isNotEmpty) {
+      final done = _subtasks.where((s) => s.isCompleted).length;
+      return '$done/${_subtasks.length}';
+    }
+    if (widget.task.status == TaskStatus.overdue) {
+      final days = DateTime.now().difference(widget.task.deadline).inDays;
       return '${days}d';
     }
     return '${(_progress * 100).toInt()}%';
   }
 
   String get _subText {
-    if (task.status == TaskStatus.overdue) return 'overdue';
-    if (task.status == TaskStatus.completed) return 'done';
+    if (widget.task.status == TaskStatus.completed) return 'done';
+    if (!_loadingSubtasks && _subtasks.isNotEmpty) return 'subtasks';
+    if (widget.task.status == TaskStatus.overdue) return 'overdue';
     return 'complete';
   }
 
   Color get _statusColor {
-    switch (task.status) {
+    switch (widget.task.status) {
       case TaskStatus.completed:
         return AppColors.success;
       case TaskStatus.overdue:
@@ -69,7 +91,7 @@ class TaskDetailScreen extends StatelessWidget {
   }
 
   String get _statusLabel {
-    switch (task.status) {
+    switch (widget.task.status) {
       case TaskStatus.completed:
         return 'Completed';
       case TaskStatus.overdue:
@@ -82,21 +104,98 @@ class TaskDetailScreen extends StatelessWidget {
   }
 
   Color get _diffColor {
-    if (task.difficulty >= 8) return AppColors.danger;
-    if (task.difficulty >= 5) return AppColors.warning;
+    if (widget.task.difficulty >= 8) return AppColors.danger;
+    if (widget.task.difficulty >= 5) return AppColors.warning;
     return AppColors.success;
   }
 
-  Future<void> _complete(BuildContext ctx) async {
-    final auth = ctx.read<AuthProvider>();
+  // ── lifecycle ───────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSubtasks();
+  }
+
+  @override
+  void dispose() {
+    _subtaskController.dispose();
+    super.dispose();
+  }
+
+  // ── subtask CRUD ────────────────────────────────────────
+
+  Future<void> _loadSubtasks() async {
+    final list = await AppDatabase.getSubtasks(widget.task.id);
+    if (mounted) {
+      setState(() {
+        _subtasks = list;
+        _loadingSubtasks = false;
+      });
+    }
+  }
+
+  Future<void> _addSubtask() async {
+    final title = _subtaskController.text.trim();
+    if (title.isEmpty) return;
+    final sub = SubtaskModel(
+      id: const Uuid().v4(),
+      taskId: widget.task.id,
+      title: title,
+      sortOrder: _subtasks.length,
+    );
+    await AppDatabase.insertSubtask(sub);
+    _subtaskController.clear();
+    if (mounted) setState(() => _subtasks = [..._subtasks, sub]);
+  }
+
+  Future<void> _toggleSubtask(SubtaskModel sub) async {
+    final updated = sub.copyWith(isCompleted: !sub.isCompleted);
+    await AppDatabase.toggleSubtask(updated.id, updated.isCompleted);
+    if (mounted) {
+      setState(() {
+        final idx = _subtasks.indexWhere((s) => s.id == sub.id);
+        if (idx != -1) {
+          final list = List<SubtaskModel>.from(_subtasks);
+          list[idx] = updated;
+          _subtasks = list;
+        }
+      });
+      if (widget.task.teamId.isNotEmpty) {
+        final total = _subtasks.length;
+        final done = _subtasks.where((s) => s.isCompleted).length;
+        final newProgress =
+            total > 0 ? ((done / total) * 100).round() : 0;
+        context.read<TeamProvider>().updateTaskProgress(
+            widget.task.id, newProgress, widget.task.status.name);
+      }
+    }
+  }
+
+  Future<void> _deleteSubtask(SubtaskModel sub) async {
+    await AppDatabase.deleteSubtask(sub.id);
+    if (mounted) {
+      setState(() =>
+          _subtasks = _subtasks.where((s) => s.id != sub.id).toList());
+    }
+  }
+
+  // ── complete task ───────────────────────────────────────
+
+  Future<void> _complete() async {
+    final auth = context.read<AuthProvider>();
     if (auth.user == null) return;
     final user = auth.user!;
 
-    final taskProvider = ctx.read<TaskProvider>();
-    final gam = ctx.read<GamificationProvider>();
-    final cp = ctx.read<ChallengeProvider>();
+    final taskProvider = context.read<TaskProvider>();
+    final teamProv = context.read<TeamProvider>();
+    final gam = context.read<GamificationProvider>();
+    final cp = context.read<ChallengeProvider>();
 
-    final completed = await taskProvider.completeTask(task.id);
+    final completed = await taskProvider.completeTask(widget.task.id);
+    if (widget.task.teamId.isNotEmpty) {
+      await teamProv.updateTaskProgress(widget.task.id, 100, 'completed');
+    }
     final result = await gam.handleCompletion(completed, user);
 
     if (completed.xpEarned > 0 &&
@@ -116,21 +215,22 @@ class TaskDetailScreen extends StatelessWidget {
       }
     }
 
-    if (ctx.mounted) {
+    if (mounted) {
       final xp = result.xpEarned;
-      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: AppColors.success,
         content: Text(
           xp > 0 ? 'Task complete! +$xp XP earned' : 'Task marked complete',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.w500),
         ),
         duration: const Duration(seconds: 3),
       ));
 
       if (result.achievements.isNotEmpty) {
         Future.delayed(const Duration(milliseconds: 600), () {
-          if (ctx.mounted) {
-            ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               backgroundColor: AppColors.warning,
               content: Text(
                 'Achievement: ${result.achievements.first.title}',
@@ -142,11 +242,11 @@ class TaskDetailScreen extends StatelessWidget {
         });
       }
 
-      Navigator.pop(ctx);
+      Navigator.pop(context);
     }
   }
 
-  // ── build ─────────────────────────────────────────────
+  // ── build ───────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -154,8 +254,8 @@ class TaskDetailScreen extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final currentUser = auth.user;
 
-    final canComplete = task.status != TaskStatus.completed &&
-        task.status != TaskStatus.overdue;
+    final canComplete = widget.task.status != TaskStatus.completed &&
+        widget.task.status != TaskStatus.overdue;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D14),
@@ -168,7 +268,7 @@ class TaskDetailScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          task.title,
+          widget.task.title,
           style: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 16,
@@ -179,7 +279,7 @@ class TaskDetailScreen extends StatelessWidget {
         ),
         actions: [
           if (currentUser?.canCreateTasks == true ||
-              task.createdBy == currentUser?.id)
+              widget.task.createdBy == currentUser?.id)
             IconButton(
               icon: const Icon(Icons.delete_outline_rounded,
                   color: Color(0xFFEF4444)),
@@ -190,34 +290,94 @@ class TaskDetailScreen extends StatelessWidget {
                     backgroundColor: const Color(0xFF191D30),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16)),
-                    title: const Text('Delete Task',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontFamily: 'Poppins')),
-                    content: const Text('This cannot be undone.',
-                        style: TextStyle(
-                            color: Color(0xFF848A94),
-                            fontFamily: 'Poppins')),
+                    title: const Text(
+                      'Delete Task?',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700)),
+                    content: const Text(
+                      'This will permanently delete '
+                      'the task and all its subtasks.',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF848A94),
+                        fontSize: 13)),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
                         child: const Text('Cancel',
                             style: TextStyle(
-                                color: Color(0xFF848A94)))),
+                              fontFamily: 'Poppins',
+                              color: Color(0xFF848A94)))),
                       ElevatedButton(
                         onPressed: () => Navigator.pop(ctx, true),
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFEF4444)),
+                          backgroundColor: const Color(0xFFEF4444),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8))),
                         child: const Text('Delete',
-                            style: TextStyle(color: Colors.white))),
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600))),
                     ],
                   ),
                 );
-                if (confirm == true && context.mounted) {
-                  await context
-                      .read<TaskProvider>()
-                      .deleteTask(task.id);
-                  if (context.mounted) Navigator.pop(context);
+
+                if (confirm != true) return;
+                if (!mounted) return;
+
+                try {
+                  final auth = context.read<AuthProvider>();
+                  final user = auth.user;
+                  final isTeamTask =
+                      (user?.hasTeam == true) &&
+                      widget.task.teamId.isNotEmpty;
+
+                  if (isTeamTask) {
+                    context
+                        .read<TeamProvider>()
+                        .removeTaskLocally(widget.task.id);
+
+                    await FirebaseDatabase.instance
+                        .ref('team_tasks'
+                            '/${widget.task.teamId}'
+                            '/${widget.task.id}')
+                        .remove()
+                        .timeout(const Duration(seconds: 10));
+
+                    await context
+                        .read<TeamProvider>()
+                        .deleteTaskFromDb(widget.task.id);
+                  } else {
+                    await context
+                        .read<TaskProvider>()
+                        .deleteTask(widget.task.id);
+                  }
+
+                  await AppDatabase
+                      .deleteSubtasksForTask(widget.task.id);
+
+                  debugPrint('[Delete] Task deleted: '
+                      '${widget.task.id}');
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                  }
+                } catch (e) {
+                  debugPrint('[Delete] Error: $e');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Failed to delete: $e',
+                          style: const TextStyle(
+                            fontFamily: 'Poppins')),
+                        backgroundColor:
+                          const Color(0xFFEF4444)));
+                  }
                 }
               },
             ),
@@ -239,7 +399,7 @@ class TaskDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              task.title,
+              widget.task.title,
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 22,
@@ -283,7 +443,7 @@ class TaskDetailScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '${task.difficulty}/10',
+                        '${widget.task.difficulty}/10',
                         style: TextStyle(
                           color: _diffColor,
                           fontSize: 16,
@@ -299,9 +459,9 @@ class TaskDetailScreen extends StatelessWidget {
                 child: _InfoCard(
                   label: 'XP Reward',
                   child: Text(
-                    task.status == TaskStatus.completed
-                        ? '+${task.xpEarned} XP'
-                        : '+${task.difficulty * 10} XP',
+                    widget.task.status == TaskStatus.completed
+                        ? '+${widget.task.xpEarned} XP'
+                        : '+${widget.task.difficulty * 10} XP',
                     style: const TextStyle(
                       color: AppColors.primaryLight,
                       fontSize: 16,
@@ -315,7 +475,7 @@ class TaskDetailScreen extends StatelessWidget {
                 child: _InfoCard(
                   label: 'Deadline',
                   child: Text(
-                    DateFormat('MMM d').format(task.deadline),
+                    DateFormat('MMM d').format(widget.task.deadline),
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 16,
@@ -340,17 +500,34 @@ class TaskDetailScreen extends StatelessWidget {
                 border: Border.all(color: AppColors.border, width: 0.5),
               ),
               child: Text(
-                task.description?.isNotEmpty == true
-                    ? task.description!
+                widget.task.description?.isNotEmpty == true
+                    ? widget.task.description!
                     : 'No description provided.',
                 style: TextStyle(
-                  color: task.description?.isNotEmpty == true
+                  color: widget.task.description?.isNotEmpty == true
                       ? AppColors.textSecondary
                       : AppColors.textMuted,
                   fontSize: 13,
                   height: 1.5,
                 ),
               ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // ── subtasks ──────────────────────────────
+            _SectionTitle('Subtasks'),
+            const SizedBox(height: 10),
+            _SubtasksSection(
+              subtasks: _subtasks,
+              loading: _loadingSubtasks,
+              controller: _subtaskController,
+              isTeamLead: currentUser?.role == UserRole.teamLead,
+              onAdd: _addSubtask,
+              onToggle: _toggleSubtask,
+              onDelete: _deleteSubtask,
+              taskCompleted:
+                  widget.task.status == TaskStatus.completed,
             ),
 
             const SizedBox(height: 24),
@@ -370,45 +547,78 @@ class TaskDetailScreen extends StatelessWidget {
         ),
       ),
       // ── bottom button ─────────────────────────────
-      bottomNavigationBar: canComplete
+      bottomNavigationBar: widget.task.status == TaskStatus.completed
           ? Container(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
               color: const Color(0xFF0D0D14),
-              child: SizedBox(
-                height: 52,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                  ),
-                  onPressed: () => _complete(context),
-                  child: const Text(
-                    'Mark as Complete',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                      color: const Color(0xFF22C55E).withValues(alpha: 0.4)),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle,
+                        color: Color(0xFF22C55E), size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Task Completed',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF22C55E),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             )
-          : null,
+          : canComplete
+              ? Container(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                  color: const Color(0xFF0D0D14),
+                  child: SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: _complete,
+                      child: const Text(
+                        'Mark as Complete',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : null,
     );
   }
 
   Widget _buildMembersSection(
       BuildContext context, TeamProvider team, dynamic currentUser) {
-    final assignedId = task.assignedUserId;
+    final assignedId = widget.task.assignedUserId;
     final leadId = team.team?.leadId;
 
     if (assignedId == null || assignedId.isEmpty) {
-      // Show overlapping avatars for team if no one assigned
       if (team.team != null && team.team!.memberIds.isNotEmpty) {
         final initials = team.team!.memberIds
-            .map((id) => id.length >= 2 ? id.substring(0, 2).toUpperCase() : id.toUpperCase())
+            .map((id) => id.length >= 2
+                ? id.substring(0, 2).toUpperCase()
+                : id.toUpperCase())
             .toList();
         return Container(
           padding: const EdgeInsets.all(14),
@@ -437,15 +647,13 @@ class TaskDetailScreen extends StatelessWidget {
       return _memberEmptyState();
     }
 
-    // Build member row for assigned user
     final isCurrentUser = currentUser?.id == assignedId;
     final isLead = assignedId == leadId;
     final initials = assignedId.length >= 2
         ? assignedId.substring(0, 2).toUpperCase()
         : assignedId.toUpperCase();
-    final displayName = isCurrentUser
-        ? (currentUser?.name ?? 'You')
-        : 'Team Member';
+    final displayName =
+        isCurrentUser ? (currentUser?.name ?? 'You') : 'Team Member';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -482,11 +690,11 @@ class TaskDetailScreen extends StatelessWidget {
 
     events.add(_TimelineEvent(
       label: 'Task created',
-      date: task.deadline.subtract(const Duration(days: 1)),
+      date: widget.task.deadline.subtract(const Duration(days: 1)),
       color: AppColors.primary,
     ));
 
-    if (task.status == TaskStatus.inProgress) {
+    if (widget.task.status == TaskStatus.inProgress) {
       events.add(_TimelineEvent(
         label: 'Work started',
         date: DateTime.now().subtract(const Duration(hours: 2)),
@@ -494,18 +702,19 @@ class TaskDetailScreen extends StatelessWidget {
       ));
     }
 
-    if (task.status == TaskStatus.completed && task.completedAt != null) {
+    if (widget.task.status == TaskStatus.completed &&
+        widget.task.completedAt != null) {
       events.add(_TimelineEvent(
-        label: 'Task completed · +${task.xpEarned} XP',
-        date: task.completedAt!,
+        label: 'Task completed · +${widget.task.xpEarned} XP',
+        date: widget.task.completedAt!,
         color: AppColors.success,
       ));
     }
 
-    if (task.status == TaskStatus.overdue) {
+    if (widget.task.status == TaskStatus.overdue) {
       events.add(_TimelineEvent(
         label: 'Deadline missed',
-        date: task.deadline,
+        date: widget.task.deadline,
         color: AppColors.danger,
       ));
     }
@@ -528,6 +737,232 @@ class TaskDetailScreen extends StatelessWidget {
 }
 
 // ── sub-widgets ──────────────────────────────────────────────
+
+class _SubtasksSection extends StatelessWidget {
+  final List<SubtaskModel> subtasks;
+  final bool loading;
+  final TextEditingController controller;
+  final Future<void> Function() onAdd;
+  final Future<void> Function(SubtaskModel) onToggle;
+  final Future<void> Function(SubtaskModel) onDelete;
+  final bool taskCompleted;
+  final bool isTeamLead;
+
+  const _SubtasksSection({
+    required this.subtasks,
+    required this.loading,
+    required this.controller,
+    required this.onAdd,
+    required this.onToggle,
+    required this.onDelete,
+    required this.taskCompleted,
+    required this.isTeamLead,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final total = subtasks.length;
+    final done = subtasks.where((s) => s.isCompleted).length;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (total > 0) ...[
+            Row(children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: done / total,
+                    backgroundColor: const Color(0xFF2A2F45),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      done == total ? AppColors.success : AppColors.primary,
+                    ),
+                    minHeight: 4,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '$done / $total',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 12),
+          ],
+          if (loading)
+            const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else ...[
+            if (subtasks.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      isTeamLead
+                          ? Icons.add_circle_outline
+                          : Icons.checklist_rounded,
+                      size: 14,
+                      color: const Color(0xFF848A94),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isTeamLead
+                          ? 'Break this task into steps'
+                          : 'No subtasks added yet',
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF848A94),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ...subtasks.map((sub) => _SubtaskTile(
+                  subtask: sub,
+                  isTeamLead: isTeamLead,
+                  onToggle: taskCompleted ? null : () => onToggle(sub),
+                  onDelete: taskCompleted ? null : () => onDelete(sub),
+                )),
+            if (!taskCompleted && isTeamLead) ...[
+              if (subtasks.isNotEmpty) const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontFamily: 'Poppins',
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'Add a subtask...',
+                      hintStyle: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontFamily: 'Poppins',
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    onSubmitted: (_) => onAdd(),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: onAdd,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.add,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ]),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SubtaskTile extends StatelessWidget {
+  final SubtaskModel subtask;
+  final bool isTeamLead;
+  final VoidCallback? onToggle;
+  final VoidCallback? onDelete;
+
+  const _SubtaskTile({
+    required this.subtask,
+    required this.isTeamLead,
+    required this.onToggle,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: onToggle,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: subtask.isCompleted
+                    ? AppColors.success
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: subtask.isCompleted
+                      ? AppColors.success
+                      : AppColors.border,
+                  width: 1.5,
+                ),
+              ),
+              child: subtask.isCompleted
+                  ? const Icon(Icons.check, size: 13, color: Colors.white)
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              subtask.title,
+              style: TextStyle(
+                color: subtask.isCompleted
+                    ? AppColors.textMuted
+                    : AppColors.textSecondary,
+                fontSize: 13,
+                decoration: subtask.isCompleted
+                    ? TextDecoration.lineThrough
+                    : null,
+                decorationColor: AppColors.textMuted,
+              ),
+            ),
+          ),
+          if (isTeamLead && onDelete != null)
+            GestureDetector(
+              onTap: onDelete,
+              child: const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(Icons.close, size: 14, color: AppColors.textMuted),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 class _StatusChip extends StatelessWidget {
   final String label;
@@ -694,7 +1129,8 @@ class _TimelineEvent {
   final DateTime date;
   final Color color;
 
-  _TimelineEvent({required this.label, required this.date, required this.color});
+  _TimelineEvent(
+      {required this.label, required this.date, required this.color});
 }
 
 class _TimelineTile extends StatelessWidget {

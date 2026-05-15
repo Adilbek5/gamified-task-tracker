@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/challenge_model.dart';
 import '../../../data/models/user_model.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../providers/challenge_provider.dart';
 import '../../widgets/circular_progress_widget.dart';
 
@@ -28,6 +29,8 @@ class _ChallengeDetailScreenState extends State<ChallengeDetailScreen> {
   static const _bronze = Color(0xFFCD7F32);
   static const _liveGreen = Color(0xFF22C55E);
 
+  static final Set<String> _shownWinnerDialogs = {};
+
   ChallengeModel get _challenge => widget.challenge;
   UserModel get _user => widget.user;
 
@@ -36,12 +39,18 @@ class _ChallengeDetailScreenState extends State<ChallengeDetailScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_user.teamId != null) {
-        context.read<ChallengeProvider>().listenLeaderboard(
-              _user.teamId!,
-              _challenge.id,
-            );
+        final cp = context.read<ChallengeProvider>();
+        cp.listenLeaderboard(_user.teamId!, _challenge.id);
+        cp.listenActivity(_user.teamId!, _challenge.id);
       }
+      _maybeShowWinnerDialog();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _maybeShowWinnerDialog();
   }
 
   // ── helpers ──────────────────────────────────────────
@@ -91,6 +100,201 @@ class _ChallengeDetailScreenState extends State<ChallengeDetailScreen> {
         duration: Duration(seconds: 2),
       ));
     }
+  }
+
+  // ── winner dialog ─────────────────────────────────────
+
+  void _maybeShowWinnerDialog() {
+    if (_challenge.isActive) return;
+    if (_shownWinnerDialogs.contains(_challenge.id)) return;
+    final cp = context.read<ChallengeProvider>();
+    final lb = cp.leaderboardFor(_challenge.id);
+    if (lb.isEmpty) return;
+
+    _shownWinnerDialogs.add(_challenge.id);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _showWinnerDialog(lb);
+      }
+    });
+  }
+
+  void _showWinnerDialog(List<LeaderboardEntry> leaderboard) {
+    final top3 = leaderboard.take(3).toList();
+    final medals = ['🥇', '🥈', '🥉'];
+    final medalColors = [
+      const Color(0xFFFFB800),
+      const Color(0xFFB0B0B0),
+      const Color(0xFFCD7F32),
+    ];
+    final winner = top3.first;
+    final myEntry = leaderboard
+        .where((e) => e.userId == context.read<AuthProvider>().user?.id)
+        .firstOrNull;
+    final myRank = myEntry != null ? leaderboard.indexOf(myEntry) + 1 : -1;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF191D30),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+                color: const Color(0xFFFFB800).withValues(alpha: 0.7),
+                width: 2),
+            boxShadow: [
+              BoxShadow(
+                  color: const Color(0xFFFFB800).withValues(alpha: 0.15),
+                  blurRadius: 40,
+                  spreadRadius: 5),
+            ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🏆', style: TextStyle(fontSize: 56)),
+              const SizedBox(height: 8),
+              const Text(
+                'Challenge Ended!',
+                style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Color(0xFFFFB800),
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1)),
+              const SizedBox(height: 4),
+              Text(
+                _challenge.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Color(0xFF848A94),
+                    fontSize: 12)),
+              const SizedBox(height: 20),
+              // Winner highlight
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [
+                    const Color(0xFFFFB800).withValues(alpha: 0.2),
+                    const Color(0xFFFF6B35).withValues(alpha: 0.1),
+                  ]),
+                  borderRadius: BorderRadius.circular(16)),
+                child: Column(children: [
+                  const Text('🥇 Winner',
+                      style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFFFFB800),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(winner.userName,
+                      style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800)),
+                  Text('${winner.xp} XP earned',
+                      style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFF3580FF),
+                          fontSize: 13)),
+                  if (_challenge.prizeCoins > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '🪙 ${_challenge.prizeCoins} coins awarded!',
+                        style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFFFFB800),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700))),
+                ]),
+              ),
+              // Ranks 2 and 3
+              if (top3.length > 1) ...[
+                const SizedBox(height: 16),
+                ...top3.skip(1).toList().asMap().entries.map((e) {
+                  final rank = e.key + 2;
+                  final entry = e.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      Text(medals[rank - 1],
+                          style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(entry.userName,
+                            style: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: medalColors[rank - 1],
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600))),
+                      Text('${entry.xp} XP',
+                          style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Color(0xFF848A94),
+                              fontSize: 12)),
+                    ]),
+                  );
+                }),
+              ],
+              // Current user's result if outside top 3
+              if (myRank > 3 && myEntry != null) ...[
+                const Divider(color: Color(0xFF2A2D3E)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(children: [
+                    Text('#$myRank',
+                        style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFF848A94),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('${myEntry.userName} (you)',
+                          style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Color(0xFF3580FF),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600))),
+                    Text('${myEntry.xp} XP',
+                        style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFF848A94),
+                            fontSize: 12)),
+                  ]),
+                ),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFB800),
+                      foregroundColor: Colors.black,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14))),
+                  child: const Text('See Full Results',
+                      style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14))),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ── build ─────────────────────────────────────────────
@@ -211,6 +415,58 @@ class _ChallengeDetailScreenState extends State<ChallengeDetailScreen> {
             ),
 
             const SizedBox(height: 28),
+
+            // ── prize banner ──────────────────────────
+            if (_challenge.prizeCoins > 0)
+              Container(
+                margin: const EdgeInsets.fromLTRB(
+                  20, 0, 20, 16),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFFFFB800)
+                        .withValues(alpha: 0.15),
+                      const Color(0xFFFF6B35)
+                        .withValues(alpha: 0.1),
+                    ]),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFFFFB800)
+                      .withValues(alpha: 0.5))),
+                child: Row(
+                  children: [
+                    const Text('🏆',
+                      style: TextStyle(fontSize: 32)),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Winner Prize',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFF848A94),
+                            fontSize: 11)),
+                        Text(
+                          '🪙 ${_challenge.prizeCoins} Coins',
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFFFFB800),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800)),
+                        const Text(
+                          'Awarded to #1 on leaderboard',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFF848A94),
+                            fontSize: 10)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
 
             // ── stats row ─────────────────────────────
             Row(children: [
@@ -460,6 +716,145 @@ class _ChallengeDetailScreenState extends State<ChallengeDetailScreen> {
             ),
             const SizedBox(height: 12),
             _buildParticipants(leaderboard),
+
+            const SizedBox(height: 28),
+
+            // ── activity feed ─────────────────────────
+            Row(children: [
+              const Text(
+                'Live Activity',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                    color: _liveGreen, shape: BoxShape.circle),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            Consumer<ChallengeProvider>(
+              builder: (_, cp, __) {
+                final activities = cp.activitiesFor(_challenge.id);
+                if (activities.isEmpty) {
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.border, width: 0.5),
+                    ),
+                    child: const Text(
+                      'No activity yet. Complete tasks to appear here!',
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 13),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+                return Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.border, width: 0.5),
+                  ),
+                  child: Column(
+                    children: activities.asMap().entries.map((e) {
+                      final act = e.value;
+                      final isLast = e.key == activities.length - 1;
+                      final minutesAgo = DateTime.now()
+                          .difference(act.timestamp)
+                          .inMinutes;
+                      final timeLabel = minutesAgo < 1
+                          ? 'just now'
+                          : minutesAgo < 60
+                              ? '${minutesAgo}m ago'
+                              : '${minutesAgo ~/ 60}h ago';
+
+                      return Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            child: Row(children: [
+                              const Text('⚡',
+                                  style: TextStyle(fontSize: 14)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: const TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 13),
+                                    children: [
+                                      TextSpan(
+                                        text: act.userName,
+                                        style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontWeight:
+                                                FontWeight.w600),
+                                      ),
+                                      const TextSpan(
+                                        text: ' completed ',
+                                        style: TextStyle(
+                                            color:
+                                                AppColors.textSecondary),
+                                      ),
+                                      TextSpan(
+                                        text: '"${act.taskTitle}"',
+                                        style: const TextStyle(
+                                            color:
+                                                AppColors.textPrimary),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '+${act.xpEarned} XP',
+                                    style: const TextStyle(
+                                      color: _liveGreen,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    timeLabel,
+                                    style: const TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ]),
+                          ),
+                          if (!isLast)
+                            const Divider(
+                                color: AppColors.border,
+                                height: 1,
+                                indent: 14,
+                                endIndent: 14),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
           ],
         ),
       ),

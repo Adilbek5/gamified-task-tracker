@@ -116,6 +116,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           teamId: widget.user.teamId!,
           assignedUserId: _assignedUserId,
           assignedUserName: _assignedUserName,
+          progress: 0,
         );
         await context.read<TeamProvider>().createTask(task);
       } else {

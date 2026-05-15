@@ -67,7 +67,12 @@ class _AppState extends State<App> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(
-          create: (_) => AuthProvider(_authSvc, _userRepo)),
+          create: (_) {
+            final p = AuthProvider(_authSvc, _userRepo);
+            debugPrint('[Main] AuthProvider created: '
+                '${identityHashCode(p)}');
+            return p;
+          }),
         ChangeNotifierProvider(
           create: (_) => TaskProvider(_taskRepo)),
         ChangeNotifierProvider(
@@ -84,6 +89,7 @@ class _AppState extends State<App> {
           create: (_) => SyncService.instance),
       ],
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'Gamified Task Tracker',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
@@ -99,6 +105,10 @@ class _AppState extends State<App> {
     );
   }
 }
+
+// Global navigator key — accessible from anywhere
+final GlobalKey<NavigatorState> navigatorKey =
+    GlobalKey<NavigatorState>();
 
 class AppEntry extends StatefulWidget {
   const AppEntry({super.key});
@@ -135,6 +145,15 @@ class _AppEntryState extends State<AppEntry> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    debugPrint('[AppEntry] provider hash: '
+        '${identityHashCode(auth)}');
+
+    debugPrint('[AppEntry] build — '
+        'initialized=$_initialized '
+        'isAuth=${auth.isAuthenticated} '
+        'hasTeam=${auth.user?.hasTeam}');
+
     if (!_initialized) {
       return const Scaffold(
         backgroundColor: Color(0xFF0A0C16),
@@ -143,17 +162,16 @@ class _AppEntryState extends State<AppEntry> {
             color: Color(0xFF3580FF))));
     }
 
-    final auth = context.watch<AuthProvider>();
     final user = auth.user;
 
     if (!auth.isAuthenticated || user == null) {
-      return const LoginScreen();
+      return const LoginScreen(key: ValueKey('login'));
     }
 
     if (user.hasTeam) {
-      return const DashboardScreen();
+      return const DashboardScreen(key: ValueKey('dashboard'));
     }
 
-    return const TeamSetupScreen();
+    return const TeamSetupScreen(key: ValueKey('teamsetup'));
   }
 }

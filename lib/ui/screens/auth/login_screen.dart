@@ -17,6 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _name = TextEditingController();
   final bool _isLogin = true;
   bool _googleLoading = false;
+  bool _loading = false;
 
   // Compiled once — never recreated during build
   static final _emailRegex = RegExp(
@@ -76,6 +77,12 @@ class _LoginScreenState extends State<LoginScreen> {
       // AppEntry handles navigation automatically via context.watch
     } catch (e) {
       if (mounted) _showError('Sign in failed. Please try again.');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      } else {
+        _loading = false;
+      }
     }
   }
 
@@ -84,6 +91,12 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final auth = context.read<AuthProvider>();
       final ok = await auth.signInWithGoogle();
+      if (mounted) {
+        setState(() {
+          _googleLoading = false;
+          _loading = false;
+        });
+      }
       if (!mounted) return;
       if (!ok && auth.error != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -103,14 +116,25 @@ class _LoginScreenState extends State<LoginScreen> {
             backgroundColor: const Color(0xFFEF4444)));
       }
     } finally {
-      if (mounted) setState(() => _googleLoading = false);
+      if (mounted) {
+        setState(() => _googleLoading = false);
+      } else {
+        _googleLoading = false;
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final bool loading = auth.loading;
+    if (auth.isAuthenticated) {
+      // Auth succeeded but parent AppEntry hasn't rebuilt yet.
+      // Force a microtask to let parent rebuild.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+    final bool loading = auth.loading || _loading;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0C16),

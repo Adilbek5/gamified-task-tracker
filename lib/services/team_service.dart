@@ -22,6 +22,9 @@ class TeamService {
         id: id, name: name, leadId: leadId,
         inviteCode: code, memberIds: [leadId]);
     await _db.ref('teams/$id').set(team.toFirebase());
+    await _db
+        .ref('users/$leadId/teamId')
+        .set(id);
     return team;
   }
 
@@ -55,6 +58,9 @@ class TeamService {
       ids.add(userId);
       await _db.ref('teams/$teamId/member_ids').set(ids);
     }
+    await _db
+        .ref('users/$userId/teamId')
+        .set(teamId);
   }
 
   Future<TeamModel?> getTeam(String teamId) async {

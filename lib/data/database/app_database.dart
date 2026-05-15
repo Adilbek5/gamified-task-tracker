@@ -1,6 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
+import '../models/subtask_model.dart';
+
 class AppDatabase {
   static Database? _db;
 
@@ -14,7 +16,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'gtt.db');
     return openDatabase(
       path,
-      version: 10,
+      version: 13,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -34,7 +36,9 @@ class AppDatabase {
     equipped_avatar_id TEXT NOT NULL DEFAULT 'avatar_default',
     equipped_border_id TEXT NOT NULL DEFAULT 'border_none',
     equipped_badge_id TEXT NOT NULL DEFAULT 'badge_none',
-    skill_level TEXT NOT NULL DEFAULT 'junior'
+    skill_level TEXT NOT NULL DEFAULT 'junior',
+    streak_days INTEGER NOT NULL DEFAULT 0,
+    last_active_date TEXT NOT NULL DEFAULT ''
   )
 ''');
     await db.execute('''CREATE TABLE tasks(
@@ -49,7 +53,8 @@ class AppDatabase {
       assigned_user_id TEXT DEFAULT '',
       assigned_user_name TEXT DEFAULT '',
       completed_at TEXT DEFAULT '',
-      xp_earned INTEGER DEFAULT 0
+      xp_earned INTEGER DEFAULT 0,
+      progress INTEGER NOT NULL DEFAULT 0
     )''');
     await db.execute('''CREATE TABLE achievements(
       id TEXT PRIMARY KEY, user_id TEXT, title TEXT,
@@ -69,13 +74,19 @@ class AppDatabase {
       data TEXT,
       created_at TEXT NOT NULL
     )''');
+    await db.execute('''CREATE TABLE subtasks(
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      is_completed INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )''');
   }
 
   static Future<void> clearAllData() async {
     final db = await instance;
     final batch = db.batch();
     batch.delete('tasks');
-    batch.delete('user_inventory');
     batch.delete('sync_queue');
     // DO NOT delete users — teamId and role must survive logout
     await batch.commit(noResult: true);
@@ -162,5 +173,82 @@ class AppDatabase {
           "TEXT NOT NULL DEFAULT 'junior'");
       } catch (_) {}
     }
+    if (oldV < 11) {
+      try {
+        await db.execute('''CREATE TABLE IF NOT EXISTS subtasks(
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          is_completed INTEGER NOT NULL DEFAULT 0,
+          sort_order INTEGER NOT NULL DEFAULT 0
+        )''');
+      } catch (_) {}
+    }
+    if (oldV < 12) {
+      try {
+        await db.execute(
+            'ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0');
+      } catch (_) {}
+      try {
+        await db.execute(
+            "ALTER TABLE users ADD COLUMN last_active_date TEXT DEFAULT ''");
+      } catch (_) {}
+    }
+    if (oldV < 13) {
+      try {
+        await db.execute(
+            'ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {}
+    }
+  }
+
+  static Future<List<SubtaskModel>> getSubtasks(String taskId) async {
+    final db = await instance;
+    final rows = await db.query(
+      'subtasks',
+      where: 'task_id = ?',
+      whereArgs: [taskId],
+      orderBy: 'sort_order ASC',
+    );
+    return rows.map(SubtaskModel.fromMap).toList();
+  }
+
+  static Future<void> insertSubtask(SubtaskModel sub) async {
+    final db = await instance;
+    await db.insert('subtasks', sub.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<void> toggleSubtask(String id, bool isCompleted) async {
+    final db = await instance;
+    await db.update(
+      'subtasks',
+      {'is_completed': isCompleted ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  static Future<void> deleteSubtask(String id) async {
+    final db = await instance;
+    await db.delete('subtasks', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> deleteSubtasksForTask(String taskId) async {
+    final db = await instance;
+    await db.delete('subtasks', where: 'task_id = ?', whereArgs: [taskId]);
+  }
+
+  static Future<(int, int)> getSubtaskProgress(String taskId) async {
+    final db = await instance;
+    final rows = await db.query(
+      'subtasks',
+      columns: ['is_completed'],
+      where: 'task_id = ?',
+      whereArgs: [taskId],
+    );
+    final total = rows.length;
+    final done = rows.where((r) => (r['is_completed'] as int? ?? 0) == 1).length;
+    return (done, total);
   }
 }

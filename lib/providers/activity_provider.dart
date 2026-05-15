@@ -35,6 +35,7 @@ class ActivityProvider extends ChangeNotifier {
       name: user.name,
       skillLevel: user.skillLevel.name,
       isOnline: true,
+      isTeamLead: user.isTeamLead,
     );
   }
 
@@ -51,6 +52,7 @@ class ActivityProvider extends ChangeNotifier {
       name: user.name,
       skillLevel: user.skillLevel.name,
       isOnline: true,
+      isTeamLead: user.isTeamLead,
       currentTaskId: task.id,
       currentTaskTitle: task.title,
     );
@@ -73,6 +75,7 @@ class ActivityProvider extends ChangeNotifier {
       name: user.name,
       skillLevel: user.skillLevel.name,
       isOnline: true,
+      isTeamLead: user.isTeamLead,
       currentTaskId: null,
       currentTaskTitle: null,
     );

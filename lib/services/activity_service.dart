@@ -6,6 +6,7 @@ class MemberActivity {
   final String name;
   final String skillLevel;
   final bool isOnline;
+  final bool isTeamLead;
   final String? currentTaskId;
   final String? currentTaskTitle;
 
@@ -14,6 +15,7 @@ class MemberActivity {
     required this.name,
     required this.skillLevel,
     required this.isOnline,
+    this.isTeamLead = false,
     this.currentTaskId,
     this.currentTaskTitle,
   });
@@ -25,6 +27,7 @@ class MemberActivity {
       name: m['name'] as String? ?? 'Unknown',
       skillLevel: m['skill_level'] as String? ?? 'junior',
       isOnline: m['is_online'] as bool? ?? false,
+      isTeamLead: m['is_team_lead'] as bool? ?? false,
       currentTaskId: m['current_task_id'] as String?,
       currentTaskTitle: m['current_task_title'] as String?,
     );
@@ -66,6 +69,7 @@ class ActivityService {
     required String name,
     required String skillLevel,
     bool isOnline = true,
+    bool isTeamLead = false,
     String? currentTaskId,
     String? currentTaskTitle,
   }) async {
@@ -75,6 +79,7 @@ class ActivityService {
         'name': name,
         'skill_level': skillLevel,
         'is_online': isOnline,
+        'is_team_lead': isTeamLead,
         'current_task_id': currentTaskId ?? '',
         'current_task_title': currentTaskTitle ?? '',
         'last_active': ServerValue.timestamp,

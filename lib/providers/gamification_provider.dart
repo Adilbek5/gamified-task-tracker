@@ -12,6 +12,12 @@ class GamificationProvider extends ChangeNotifier {
 
   UserModel? _user;
   List<AchievementModel> _achievements = [];
+  bool _justLeveledUp = false;
+  int _newLevel = 1;
+  bool _lastStreakReset = false;
+  bool _lastIsEarlyBird = false;
+  String _lastCompletionStatus = '';
+  int _lastDaysLate = 0;
 
   UserModel? get user => _user;
   List<AchievementModel> get achievements => _achievements;
@@ -20,6 +26,12 @@ class GamificationProvider extends ChangeNotifier {
       _user != null ? XpConstants.xpProgressInCurrentLevel(_user!.xp) : 0;
   int get xpForNext =>
       _user != null ? XpConstants.xpForNextLevel(_user!.level) : 100;
+  bool get justLeveledUp => _justLeveledUp;
+  int get newLevel => _newLevel;
+  bool get lastStreakReset => _lastStreakReset;
+  bool get lastIsEarlyBird => _lastIsEarlyBird;
+  String get lastCompletionStatus => _lastCompletionStatus;
+  int get lastDaysLate => _lastDaysLate;
 
   GamificationProvider(this._svc, this._repo);
 
@@ -45,9 +57,21 @@ class GamificationProvider extends ChangeNotifier {
     int xpEarned,
     int coinsEarned,
   })> handleCompletion(TaskModel task, UserModel user) async {
+    final oldLevel = user.level;
     final result = await _svc.processCompletion(task, user);
     _user = result.updatedUser;
     _achievements = await _repo.getAchievements(user.id);
+    final currentLevel = _user?.level ?? 1;
+    if (currentLevel > oldLevel) {
+      _justLeveledUp = true;
+      _newLevel = currentLevel;
+    } else {
+      _justLeveledUp = false;
+    }
+    _lastStreakReset = result.streakReset;
+    _lastIsEarlyBird = result.isEarlyBird;
+    _lastCompletionStatus = result.completionStatus;
+    _lastDaysLate = result.daysLate;
     notifyListeners();
     return (
       achievements: result.achievements,

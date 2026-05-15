@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import '../database/app_database.dart';
 import '../models/task_model.dart';
@@ -79,6 +80,18 @@ class TaskRepository {
   Future<void> clearAll() async {
     final db = await _db;
     await db.delete('tasks');
+  }
+
+  Future<void> updateProgress(
+      String taskId, int progress, String status) async {
+    final db = await _db;
+    await db.update(
+      'tasks',
+      {'progress': progress, 'status': status},
+      where: 'id = ?',
+      whereArgs: [taskId],
+    );
+    debugPrint('[TaskRepo] Progress updated: $taskId → $progress% ($status)');
   }
 
   Future<int> countCompleted(String teamId) async {

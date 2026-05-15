@@ -78,7 +78,6 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                 return _ChallengeCard(
                   challenge: c,
                   user: widget.user,
-                  isExpanded: false,
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -88,7 +87,7 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                       ),
                     ),
                   ),
-                  leaderboard: const [],
+                  leaderboard: cp.leaderboardFor(c.id),
                 );
               }),
           ],
@@ -98,155 +97,389 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
   }
 
   void _showCreateDialog(BuildContext context) {
-    final titleCtrl = TextEditingController();
-    int selectedDays = 7;
-
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
-          title: const Text('New Challenge',
-              style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                style: const TextStyle(
-                    color: AppColors.textPrimary),
-                decoration: InputDecoration(
-                  hintText: 'Challenge title',
-                  hintStyle: const TextStyle(
-                      color: AppColors.textMuted),
-                  filled: true,
-                  fillColor: AppColors.surfaceAlt,
-                  border: OutlineInputBorder(
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20, vertical: 24),
+        child: _CreateChallengeDialog(
+          teamId: widget.user.teamId!,
+          onCreated: () => Navigator.pop(ctx),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Responsive create-challenge dialog ─────────────────────────
+
+class _CreateChallengeDialog extends StatefulWidget {
+  final String teamId;
+  final VoidCallback onCreated;
+
+  const _CreateChallengeDialog({
+    required this.teamId,
+    required this.onCreated,
+  });
+
+  @override
+  State<_CreateChallengeDialog> createState() =>
+      _CreateChallengeDialogState();
+}
+
+class _CreateChallengeDialogState
+    extends State<_CreateChallengeDialog> {
+  final _titleController = TextEditingController();
+  int _selectedDays = 7;
+  int _selectedPrize = 0;
+  bool _isCreating = false;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}';
+  }
+
+  Future<void> _createChallenge() async {
+    if (_titleController.text.trim().isEmpty) return;
+    setState(() => _isCreating = true);
+    try {
+      await context.read<ChallengeProvider>().createChallenge(
+        title: _titleController.text.trim(),
+        teamId: widget.teamId,
+        startDate: DateTime.now(),
+        endDate:
+            DateTime.now().add(Duration(days: _selectedDays)),
+        prizeCoins: _selectedPrize,
+      );
+      widget.onCreated();
+    } finally {
+      if (mounted) setState(() => _isCreating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF191D30),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Scrollable form ────────────────────────────────
+          Flexible(
+            child: SingleChildScrollView(
+              padding:
+                  const EdgeInsets.fromLTRB(20, 24, 20, 0),
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'New Challenge',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Challenge title input
+                  TextField(
+                    controller: _titleController,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Challenge title',
+                      hintStyle: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF848A94),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFF0A0C16),
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Duration label
+                  const Text(
+                    'Duration',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFF848A94),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Duration selector — 2×2 grid, never overflows
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics:
+                        const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 3.0,
+                    children: [3, 7, 14, 30]
+                        .map((days) => GestureDetector(
+                              onTap: () => setState(
+                                  () => _selectedDays = days),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _selectedDays == days
+                                      ? const Color(0xFF3580FF)
+                                      : const Color(0xFF0A0C16),
+                                  borderRadius:
+                                      BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: _selectedDays == days
+                                        ? const Color(0xFF3580FF)
+                                        : const Color(0xFF2A2D3E),
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Row(
+                                    mainAxisSize:
+                                        MainAxisSize.min,
+                                    children: [
+                                      if (_selectedDays == days)
+                                        const Padding(
+                                          padding: EdgeInsets
+                                              .only(right: 4),
+                                          child: Icon(
+                                            Icons.check,
+                                            size: 14,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      Text(
+                                        '$days days',
+                                        style: TextStyle(
+                                          fontFamily: 'Poppins',
+                                          color:
+                                              _selectedDays ==
+                                                      days
+                                                  ? Colors.white
+                                                  : const Color(
+                                                      0xFF848A94),
+                                          fontSize: 13,
+                                          fontWeight:
+                                              FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Date range display
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A0C16),
                       borderRadius:
-                          BorderRadius.circular(8),
-                      borderSide: BorderSide.none),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Duration',
-                  style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [3, 7, 14, 30]
-                    .map((days) => ChoiceChip(
-                          label: Text('$days days'),
-                          selected:
-                              selectedDays == days,
-                          onSelected: (_) =>
-                              setDialogState(() =>
-                                  selectedDays = days),
-                          selectedColor:
-                              AppColors.primary,
-                          backgroundColor:
-                              AppColors.surfaceAlt,
-                          labelStyle: TextStyle(
-                            color: selectedDays ==
-                                    days
-                                ? Colors.white
-                                : AppColors
-                                    .textSecondary,
+                          BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _formatDate(DateTime.now()),
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFF848A94),
                             fontSize: 12,
                           ),
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceAlt,
-                  borderRadius:
-                      BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      DateFormat('MMM d')
-                          .format(DateTime.now()),
-                      style: const TextStyle(
-                          color:
-                              AppColors.textSecondary,
-                          fontSize: 12),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8),
+                          child: Icon(
+                            Icons.arrow_forward,
+                            size: 14,
+                            color: Color(0xFF848A94),
+                          ),
+                        ),
+                        Text(
+                          _formatDate(DateTime.now().add(
+                              Duration(days: _selectedDays))),
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    const Text(' → ',
-                        style: TextStyle(
-                            color:
-                                AppColors.textMuted)),
-                    Text(
-                      DateFormat('MMM d').format(
-                          DateTime.now().add(Duration(
-                              days: selectedDays))),
-                      style: const TextStyle(
-                          color:
-                              AppColors.primaryLight,
-                          fontSize: 12,
-                          fontWeight:
-                              FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () =>
-                    Navigator.pop(ctx),
-                child: const Text('Cancel',
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Prize Coins label
+                  const Text(
+                    '🪙 Prize Coins',
                     style: TextStyle(
-                        color: AppColors
-                            .textSecondary))),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(8))),
-              onPressed: () async {
-                if (titleCtrl.text.trim().isEmpty)
-                  return;
-                Navigator.pop(ctx);
-                await context
-                    .read<ChallengeProvider>()
-                    .createChallenge(
-                      title:
-                          titleCtrl.text.trim(),
-                      teamId:
-                          widget.user.teamId!,
-                      startDate: DateTime.now(),
-                      endDate: DateTime.now().add(
-                          Duration(
-                              days: selectedDays)),
-                    );
-              },
-              child: const Text('CREATE',
-                  style: TextStyle(
-                      color: Colors.white)),
+                      fontFamily: 'Poppins',
+                      color: Color(0xFF848A94),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Prize selector — Wrap, never overflows
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [0, 100, 250, 500, 1000]
+                        .map((coins) => GestureDetector(
+                              onTap: () => setState(
+                                  () => _selectedPrize = coins),
+                              child: Container(
+                                padding: const EdgeInsets
+                                    .symmetric(
+                                    horizontal: 14,
+                                    vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: _selectedPrize == coins
+                                      ? const Color(0xFFFFB800)
+                                          .withValues(alpha: 0.2)
+                                      : const Color(0xFF0A0C16),
+                                  borderRadius:
+                                      BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: _selectedPrize == coins
+                                        ? const Color(0xFFFFB800)
+                                        : const Color(0xFF2A2D3E),
+                                  ),
+                                ),
+                                child: Text(
+                                  coins == 0
+                                      ? 'No prize'
+                                      : '🪙 $coins',
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    color: _selectedPrize == coins
+                                        ? const Color(0xFFFFB800)
+                                        : const Color(0xFF848A94),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+
+          // ── Buttons — fixed below scroll, always visible ───
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(12),
+                        side: const BorderSide(
+                            color: Color(0xFF2A2D3E)),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF848A94),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed:
+                        _isCreating ? null : _createChallenge,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          const Color(0xFF3580FF),
+                      disabledBackgroundColor:
+                          const Color(0xFF3580FF)
+                              .withValues(alpha: 0.5),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isCreating
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'CREATE',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -255,14 +488,12 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
 class _ChallengeCard extends StatelessWidget {
   final ChallengeModel challenge;
   final UserModel user;
-  final bool isExpanded;
   final VoidCallback onTap;
   final List<LeaderboardEntry> leaderboard;
 
   const _ChallengeCard({
     required this.challenge,
     required this.user,
-    required this.isExpanded,
     required this.onTap,
     required this.leaderboard,
   });
@@ -360,6 +591,25 @@ class _ChallengeCard extends StatelessWidget {
                     color: AppColors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w500)),
+            if (challenge.prizeCoins > 0)
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB800)
+                    .withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: const Color(0xFFFFB800)
+                      .withValues(alpha: 0.4))),
+                child: Text(
+                  '🏆 Prize: 🪙${challenge.prizeCoins} coins',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Color(0xFFFFB800),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600))),
             const SizedBox(height: 4),
 
             // Subtitle
@@ -388,6 +638,78 @@ class _ChallengeCard extends StatelessWidget {
                 ),
               ),
             ],
+
+            Consumer<ChallengeProvider>(
+              builder: (ctx, cp, _) {
+                final lb = cp.leaderboardFor(challenge.id);
+                if (lb.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'No participants yet — be first!',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF848A94),
+                        fontSize: 10)));
+                }
+                final top = lb.take(2).toList();
+                final medals = ['🥇', '🥈', '🥉'];
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Top players',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Color(0xFF848A94),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500)),
+                          const Spacer(),
+                          Text(
+                            '${lb.length} players',
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Color(0xFF848A94),
+                              fontSize: 10)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ...top.asMap().entries.map((entry) {
+                        final i = entry.key;
+                        final player = entry.value;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              Text(medals[i],
+                                  style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  player.userName,
+                                  style: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500),
+                                  overflow: TextOverflow.ellipsis)),
+                              Text(
+                                '${player.xp} XP',
+                                style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Color(0xFF3580FF),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600)),
+                            ],
+                          ));
+                      }),
+                    ],
+                  ));
+              },
+            ),
 
             const SizedBox(height: 14),
 
@@ -449,8 +771,7 @@ class _ChallengeCard extends StatelessWidget {
                 ),
               ),
 
-            // Leaderboard (expanded)
-            if (isExpanded) ...[
+            // Leaderboard
               const SizedBox(height: 14),
               const Divider(
                   color: AppColors.border,
@@ -640,7 +961,6 @@ class _ChallengeCard extends StatelessWidget {
                   }),
                 ],
               ],
-            ],
           ],
         ),
       ),

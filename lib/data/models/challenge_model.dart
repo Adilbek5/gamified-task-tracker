@@ -5,6 +5,7 @@ class ChallengeModel {
   final DateTime startDate;
   final DateTime endDate;
   final List<String> participantIds;
+  final int prizeCoins;
 
   ChallengeModel({
     required this.id,
@@ -13,6 +14,7 @@ class ChallengeModel {
     required this.startDate,
     required this.endDate,
     this.participantIds = const [],
+    this.prizeCoins = 0,
   });
 
   bool get isActive {
@@ -27,6 +29,7 @@ class ChallengeModel {
     'start_date': startDate.toIso8601String(),
     'end_date': endDate.toIso8601String(),
     'participant_ids': participantIds.join(','),
+    'prize_coins': prizeCoins,
   };
 
   factory ChallengeModel.fromMap(Map<String, dynamic> m) =>
@@ -40,6 +43,7 @@ class ChallengeModel {
             (m['participant_ids'] as String).isNotEmpty
             ? (m['participant_ids'] as String).split(',')
             : [],
+        prizeCoins: (m['prize_coins'] as int?) ?? 0,
       );
 
   Map<String, dynamic> toFirebase() => {
@@ -48,6 +52,7 @@ class ChallengeModel {
     'start_date': startDate.toIso8601String(),
     'end_date': endDate.toIso8601String(),
     'participant_ids': participantIds,
+    'prize_coins': prizeCoins,
   };
 
   factory ChallengeModel.fromFirebase(
@@ -61,6 +66,7 @@ class ChallengeModel {
         participantIds: m['participant_ids'] != null
             ? List<String>.from(m['participant_ids'])
             : [],
+        prizeCoins: (m['prize_coins'] as int?) ?? 0,
       );
 }
 

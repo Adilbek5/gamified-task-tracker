@@ -17,6 +17,8 @@ class UserModel {
   final String equippedBorderId;
   final String equippedBadgeId;
   final SkillLevel skillLevel;
+  final int streakDays;
+  final String lastActiveDate;
 
   const UserModel({
     required this.id,
@@ -31,6 +33,8 @@ class UserModel {
     this.equippedBorderId = 'border_none',
     this.equippedBadgeId = 'badge_none',
     this.skillLevel = SkillLevel.junior,
+    this.streakDays = 0,
+    this.lastActiveDate = '',
   });
 
   bool get isTeamLead => role == UserRole.teamLead;
@@ -98,6 +102,8 @@ class UserModel {
     String? equippedBorderId,
     String? equippedBadgeId,
     SkillLevel? skillLevel,
+    int? streakDays,
+    String? lastActiveDate,
   }) =>
       UserModel(
         id: id ?? this.id,
@@ -112,6 +118,8 @@ class UserModel {
         equippedBorderId: equippedBorderId ?? this.equippedBorderId,
         equippedBadgeId: equippedBadgeId ?? this.equippedBadgeId,
         skillLevel: skillLevel ?? this.skillLevel,
+        streakDays: streakDays ?? this.streakDays,
+        lastActiveDate: lastActiveDate ?? this.lastActiveDate,
       );
 
   Map<String, dynamic> toMap() => {
@@ -127,6 +135,8 @@ class UserModel {
     'equipped_border_id': equippedBorderId,
     'equipped_badge_id': equippedBadgeId,
     'skill_level': skillLevel.name,
+    'streak_days': streakDays,
+    'last_active_date': lastActiveDate,
   };
 
   factory UserModel.fromMap(Map<String, dynamic> m) =>
@@ -149,5 +159,7 @@ class UserModel {
           (e) => e.name == (m['skill_level'] ?? 'junior'),
           orElse: () => SkillLevel.junior,
         ),
+        streakDays: m['streak_days'] as int? ?? 0,
+        lastActiveDate: m['last_active_date'] as String? ?? '',
       );
 }

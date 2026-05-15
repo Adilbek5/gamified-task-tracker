@@ -14,6 +14,7 @@ import '../../widgets/task_progress_ring.dart';
 import '../auth/login_screen.dart';
 import '../challenges/challenge_screen.dart';
 import '../tasks/create_task_screen.dart';
+import '../tasks/task_detail_screen.dart';
 import '../tasks/task_list_screen.dart';
 import '../profile/profile_screen.dart';
 
@@ -146,7 +147,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _navItem(Icons.home_rounded, 0, _idx),
               _navItem(Icons.folder_outlined, 1, _idx),
               const Expanded(child: SizedBox()), // FAB space
-              _navItem(Icons.chat_bubble_outline, 2, _idx, onTap: () {
+              _navItem(Icons.emoji_events_outlined, 2, _idx, onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -228,27 +229,58 @@ class _HomeStyles {
 // ─────────────────────────────────────────────
 //  HOME TAB
 // ─────────────────────────────────────────────
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends StatefulWidget {
   final UserModel user;
 
   const _HomeTab({required this.user});
 
   @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  @override
   Widget build(BuildContext context) {
-    // Selector2 watches both providers; only rebuilds when task counts change.
+    // Selector2 watches both providers; rebuilds on any task data change.
+    // List.from() snapshots the list at selection time so shouldRebuild can
+    // detect in-place mutations (e.g. removeTaskLocally) via length/id checks.
     return Selector2<TaskProvider, TeamProvider, _DashboardData>(
       selector: (_, taskProv, teamProv) => _DashboardData(
-        personalTasks: taskProv.tasks,
-        teamTasks: teamProv.tasks,
+        personalTasks: List<TaskModel>.from(taskProv.tasks),
+        teamTasks: List<TaskModel>.from(teamProv.tasks),
         teamName: teamProv.team?.name ?? 'Team Tasks',
         teamCompleted: teamProv.completedTasks.length,
         teamTotal: teamProv.tasks.length,
         membersCount: teamProv.team?.memberIds.length ?? 0,
       ),
-      shouldRebuild: (prev, next) =>
-          prev.personalTasks.length != next.personalTasks.length ||
-          prev.teamTasks.length != next.teamTasks.length ||
-          prev.membersCount != next.membersCount,
+      shouldRebuild: (prev, next) {
+        if (prev.teamTasks.length !=
+            next.teamTasks.length) { return true; }
+        if (prev.personalTasks.length !=
+            next.personalTasks.length) { return true; }
+        if (prev.membersCount !=
+            next.membersCount) { return true; }
+        if (prev.teamCompleted !=
+            next.teamCompleted) { return true; }
+
+        final prevTeamStatuses = prev.teamTasks
+            .map((t) => '${t.id}:${t.progress}:${t.status.name}')
+            .join('|');
+        final nextTeamStatuses = next.teamTasks
+            .map((t) => '${t.id}:${t.progress}:${t.status.name}')
+            .join('|');
+        if (prevTeamStatuses != nextTeamStatuses) return true;
+
+        final prevPersonalStatuses = prev.personalTasks
+            .map((t) => '${t.id}:${t.progress}:${t.status.name}')
+            .join('|');
+        final nextPersonalStatuses = next.personalTasks
+            .map((t) => '${t.id}:${t.progress}:${t.status.name}')
+            .join('|');
+        if (prevPersonalStatuses != nextPersonalStatuses) return true;
+
+        return false;
+      },
       builder: (context, data, child) {
         // Merge personal + team tasks, deduplicate by id.
         final merged = <String, TaskModel>{};
@@ -305,7 +337,7 @@ class _HomeTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 16),
-                  _TopBar(user: user),
+                  _TopBar(user: widget.user),
                   const SizedBox(height: 20),
                   const _GreetingSection(),
                   const SizedBox(height: 24),
@@ -334,9 +366,23 @@ class _HomeTab extends StatelessWidget {
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (ctx, i) => RepaintBoundary(
-                    child: _DashTaskCard(
-                      task: inProgressTasks[i],
-                      currentUserId: user.id,
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TaskDetailScreen(
+                              task: inProgressTasks[i],
+                            ),
+                          ),
+                        ).then((_) {
+                          if (mounted) setState(() {});
+                        });
+                      },
+                      child: _DashTaskCard(
+                        task: inProgressTasks[i],
+                        currentUserId: widget.user.id,
+                      ),
                     ),
                   ),
                   childCount: inProgressTasks.length,
@@ -386,8 +432,13 @@ class _HomeTab extends StatelessWidget {
                           color: const Color(0xFF191D30),
                           borderRadius: BorderRadius.circular(12)),
                         child: Row(children: [
-                          Text(m.skillEmoji,
-                            style: const TextStyle(fontSize: 16)),
+                          if (!m.isTeamLead) ...[
+                            Text(m.skillEmoji,
+                              style: const TextStyle(fontSize: 16)),
+                          ] else ...[
+                            const Text('👑',
+                              style: TextStyle(fontSize: 12)),
+                          ],
                           const SizedBox(width: 10),
                           Expanded(child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,16 +450,17 @@ class _HomeTab extends StatelessWidget {
                                     fontWeight: FontWeight.w500,
                                     color: Colors.white)),
                                 const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: m.skillColor.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(5)),
-                                  child: Text(m.skillLabel,
-                                    style: TextStyle(fontFamily: 'Poppins',
-                                      fontSize: 8, fontWeight: FontWeight.w600,
-                                      color: m.skillColor))),
+                                if (!m.isTeamLead)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: m.skillColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(5)),
+                                    child: Text(m.skillLabel,
+                                      style: TextStyle(fontFamily: 'Poppins',
+                                        fontSize: 8, fontWeight: FontWeight.w600,
+                                        color: m.skillColor))),
                               ]),
                               Text(m.currentTaskTitle ?? '',
                                 style: const TextStyle(fontFamily: 'Poppins',
@@ -741,16 +793,8 @@ class _DashTaskCard extends StatelessWidget {
   });
 
   double get _progress {
-    switch (task.status) {
-      case TaskStatus.completed:
-        return 1.0;
-      case TaskStatus.inProgress:
-        return 0.6;
-      case TaskStatus.overdue:
-        return 0.15;
-      default:
-        return 0.2;
-    }
+    if (task.status == TaskStatus.completed) return 1.0;
+    return (task.progress / 100.0).clamp(0.0, 1.0);
   }
 
   Color get _progressColor {

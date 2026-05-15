@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../../data/models/achievement_model.dart';
 import '../../../data/models/task_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../providers/auth_provider.dart';
@@ -30,12 +31,26 @@ class ProfileScreen extends StatelessWidget {
     final teamProv = context.watch<TeamProvider>();
     final team = teamProv.team;
     final user = auth.user ?? this.user;
-    final inProgressCount = tasks.tasks
-        .where((t) =>
-            t.status == TaskStatus.inProgress ||
-            t.status == TaskStatus.pending)
-        .length;
-    final completedCount = tasks.completedTasks.length;
+    final gam = context.watch<GamificationProvider>();
+    final xpFraction = gam.xpForNext > 0
+        ? (gam.xpProgress / gam.xpForNext).clamp(0.0, 1.0)
+        : 0.0;
+    final inProgressCount = user.hasTeam
+        ? teamProv.tasks
+            .where((t) =>
+                t.status == TaskStatus.pending ||
+                t.status == TaskStatus.inProgress)
+            .length
+        : tasks.tasks
+            .where((t) =>
+                t.status == TaskStatus.pending ||
+                t.status == TaskStatus.inProgress)
+            .length;
+    final completedCount = user.hasTeam
+        ? teamProv.tasks
+            .where((t) => t.status == TaskStatus.completed)
+            .length
+        : tasks.completedTasks.length;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0C16),
@@ -147,6 +162,191 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
 
+              // ── LEVEL & XP CARD ──
+              Container(
+                margin: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF191D30),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: const Color(0xFF3580FF)
+                            .withValues(alpha: 0.3),
+                        width: 1)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Text(user.avatarEmoji,
+                                style: const TextStyle(
+                                    fontSize: 24)),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Level ${user.level}',
+                                  style: const TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight:
+                                          FontWeight.w700)),
+                                Text(
+                                  user.avatarTitle,
+                                  style: const TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color: Color(0xFF3580FF),
+                                      fontSize: 13,
+                                      fontWeight:
+                                          FontWeight.w500)),
+                              ],
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${user.xp} XP',
+                              style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600)),
+                            Text(
+                              '${gam.xpForNext} to next level',
+                              style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Color(0xFF848A94),
+                                  fontSize: 11)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'XP Progress',
+                              style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Color(0xFF848A94),
+                                  fontSize: 11)),
+                            Text(
+                              '${(xpFraction * 100).toInt()}%',
+                              style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Color(0xFF3580FF),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: xpFraction,
+                            minHeight: 8,
+                            backgroundColor:
+                                const Color(0xFF0A0C16),
+                            valueColor:
+                                const AlwaysStoppedAnimation<Color>(
+                                    Color(0xFF3580FF)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        if (user.role == UserRole.teamLead)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFFFB800)
+                                    .withValues(alpha: 0.15),
+                                borderRadius:
+                                    BorderRadius.circular(20),
+                                border: Border.all(
+                                    color: const Color(0xFFFFB800)
+                                        .withValues(alpha: 0.5))),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('👑',
+                                    style: TextStyle(fontSize: 12)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Team Lead',
+                                  style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color: Color(0xFFFFB800),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                                color: _skillColor(user.skillLevel)
+                                    .withValues(alpha: 0.15),
+                                borderRadius:
+                                    BorderRadius.circular(20),
+                                border: Border.all(
+                                    color: _skillColor(user.skillLevel)
+                                        .withValues(alpha: 0.5))),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_skillEmoji(user.skillLevel),
+                                    style: const TextStyle(
+                                        fontSize: 12)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _skillLabel(user.skillLevel),
+                                  style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color: _skillColor(
+                                          user.skillLevel),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 4),
+                                if (user.role != UserRole.teamLead)
+                                  Text(
+                                    '${user.xpMultiplier}× XP',
+                                    style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        color: _skillColor(
+                                                user.skillLevel)
+                                            .withValues(alpha: 0.8),
+                                        fontSize: 10)),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
               // ── STATS ROW ──
               const SizedBox(height: 24),
               Padding(
@@ -243,6 +443,88 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
+
+              // ── ACHIEVEMENTS SECTION ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Row(
+                  children: [
+                    const Text(
+                      '🏆',
+                      style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Achievements',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 8),
+                    if (gam.achievements.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFB800)
+                            .withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: Text(
+                          '${gam.achievements.length}',
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFFFFB800),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600))),
+                  ],
+                ),
+              ),
+              if (gam.achievements.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: gam.achievements
+                      .map((achievement) =>
+                        _AchievementCard(achievement: achievement))
+                      .toList(),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF191D30),
+                      borderRadius: BorderRadius.circular(16)),
+                    child: const Column(
+                      children: [
+                        Text(
+                          '🏆',
+                          style: TextStyle(fontSize: 32)),
+                        SizedBox(height: 8),
+                        Text(
+                          'No achievements yet',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600)),
+                        SizedBox(height: 4),
+                        Text(
+                          'Complete tasks to earn achievements!',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color(0xFF848A94),
+                            fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 8),
 
               // ── TEAM CARD ──
               if (team != null) ...[
@@ -417,17 +699,95 @@ class ProfileScreen extends StatelessWidget {
                                 const SettingsScreen()),
                       ),
                     ),
-                    _menuItem(
-                      context,
-                      'My Task',
-                      Icons.task_outlined,
-                      const Color(0xFF3580FF),
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                const TaskListScreen()),
-                      ),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF191D30),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(
+                          Icons.group_remove_outlined,
+                          color: Color(0xFFFFB800),
+                          size: 20)),
+                      title: const Text(
+                        'Leave Team',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFFFFB800),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                      subtitle: const Text(
+                        'Stay logged in but leave your current team',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFF848A94),
+                          fontSize: 11)),
+                      onTap: () async {
+                        final user = context.read<AuthProvider>().user;
+                        if (user == null || !user.hasTeam) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('You are not in a team',
+                                style: TextStyle(fontFamily: 'Poppins')),
+                              backgroundColor: Color(0xFF848A94)));
+                          return;
+                        }
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            backgroundColor: const Color(0xFF191D30),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                            title: const Text(
+                              'Leave Team?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w600)),
+                            content: const Text(
+                              'You will stay logged in but lose access '
+                              'to your current team and its tasks. '
+                              'You can join or create a new team afterwards.',
+                              style: TextStyle(
+                                color: Color(0xFF848A94),
+                                fontFamily: 'Poppins',
+                                fontSize: 13)),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancel',
+                                  style: TextStyle(
+                                    color: Color(0xFF848A94),
+                                    fontFamily: 'Poppins'))),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFFB800),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8))),
+                                child: const Text('Leave',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontFamily: 'Poppins',
+                                    fontWeight: FontWeight.w600))),
+                            ],
+                          ),
+                        );
+                        if (confirm == true && context.mounted) {
+                          context.read<TeamProvider>().clearTeamData();
+                          final ok = await context.read<AuthProvider>().leaveTeam();
+                          if (ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Left team successfully',
+                                  style: TextStyle(fontFamily: 'Poppins')),
+                                backgroundColor: Color(0xFF22C55E),
+                                behavior: SnackBarBehavior.floating));
+                          }
+                        }
+                      },
                     ),
                     const SizedBox(height: 12),
                     _menuItem(
@@ -461,6 +821,30 @@ class ProfileScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Color _skillColor(SkillLevel level) {
+    switch (level) {
+      case SkillLevel.junior: return const Color(0xFF22C55E);
+      case SkillLevel.middle: return const Color(0xFF3580FF);
+      case SkillLevel.senior: return const Color(0xFFFFB800);
+    }
+  }
+
+  String _skillEmoji(SkillLevel level) {
+    switch (level) {
+      case SkillLevel.junior: return '🌱';
+      case SkillLevel.middle: return '⚡';
+      case SkillLevel.senior: return '🔥';
+    }
+  }
+
+  String _skillLabel(SkillLevel level) {
+    switch (level) {
+      case SkillLevel.junior: return 'Junior';
+      case SkillLevel.middle: return 'Middle';
+      case SkillLevel.senior: return 'Senior';
+    }
   }
 
   Widget _menuItem(
@@ -504,6 +888,81 @@ class ProfileScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  ACHIEVEMENT CARD
+// ─────────────────────────────────────────────
+class _AchievementCard extends StatelessWidget {
+  final AchievementModel achievement;
+
+  const _AchievementCard({required this.achievement});
+
+  @override
+  Widget build(BuildContext context) {
+    // 2 cards per row: account for horizontal padding (32) + gap (10)
+    final cardWidth = (MediaQuery.of(context).size.width - 42) / 2;
+
+    return Container(
+      width: cardWidth,
+      padding: const EdgeInsets.all(12),
+      clipBehavior: Clip.hardEdge,
+      decoration: BoxDecoration(
+        color: const Color(0xFF191D30),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFFFB800).withValues(alpha: 0.35),
+          width: 1)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB800).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8)),
+                child: const Center(
+                  child: Text(
+                    '🏆',
+                    style: TextStyle(fontSize: 16)))),
+              const Spacer(),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFB800),
+                  shape: BoxShape.circle)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            achievement.title,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              height: 1.2),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 4),
+          Text(
+            achievement.description,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Color(0xFF848A94),
+              fontSize: 10,
+              height: 1.3),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis),
+        ],
       ),
     );
   }

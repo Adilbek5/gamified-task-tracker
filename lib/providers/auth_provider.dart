@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import '../data/database/app_database.dart';
@@ -20,10 +21,34 @@ class AuthProvider extends ChangeNotifier {
   bool get hasTeam => _user?.hasTeam ?? false;
   AuthService get authSvc => _auth;
 
-  AuthProvider(this._auth, this._repo);
+  AuthProvider(this._auth, this._repo) {
+    FirebaseAuth.instance.authStateChanges().listen(
+      (firebaseUser) async {
+        debugPrint('[AuthProvider] authStateChanges: '
+            '${firebaseUser?.uid}');
+
+        if (firebaseUser == null) {
+          if (_user != null) {
+            _user = null;
+            _error = null;
+            _loading = false;
+            notifyListeners();
+          }
+          return;
+        }
+
+        if (_user == null || _user!.id != firebaseUser.uid) {
+          debugPrint('[AuthProvider] authStateChanges '
+              'triggering loadUser for: ${firebaseUser.uid}');
+          await loadUser();
+        }
+      },
+    );
+  }
 
   Future<void> loadUser() async {
     _loading = true;
+    _error = null;
     notifyListeners();
 
     try {
@@ -77,25 +102,71 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _tryRestoreTeam(String userId) async {
     try {
       final db = FirebaseDatabase.instance;
-      final snap = await db
+
+      // STEP 1: Try direct O(1) lookup first
+      final directSnap = await db
+          .ref('users/$userId/teamId')
+          .get()
+          .timeout(const Duration(seconds: 5));
+
+      if (directSnap.exists &&
+          directSnap.value != null &&
+          directSnap.value.toString().isNotEmpty) {
+        final teamId = directSnap.value.toString();
+
+        // Verify team still exists
+        final teamSnap = await db
+            .ref('teams/$teamId/lead_id')
+            .get()
+            .timeout(const Duration(seconds: 5));
+
+        if (teamSnap.exists) {
+          final leadId = teamSnap.value?.toString() ?? '';
+          final role = leadId == userId
+              ? UserRole.teamLead
+              : UserRole.teamMember;
+
+          _user = _user!.copyWith(teamId: teamId, role: role);
+          await _repo.upsert(_user!);
+          notifyListeners();
+
+          debugPrint('[Auth] Restored team via direct '
+              'lookup: $teamId as ${role.name}');
+          return;
+        }
+      }
+
+      // STEP 2: Fallback — scan all teams (old method)
+      // This runs only if direct lookup fails
+      debugPrint('[Auth] Direct lookup failed, '
+          'scanning all teams...');
+
+      final teamsSnap = await db
           .ref('teams')
           .get()
           .timeout(const Duration(seconds: 6));
 
-      if (!snap.exists || snap.value == null) return;
+      if (!teamsSnap.exists || teamsSnap.value == null) {
+        debugPrint('[AuthProvider] _tryRestoreTeam: '
+            'no teams found');
+        return;
+      }
 
-      final teams = Map<String, dynamic>.from(snap.value as Map);
+      final teams = Map<String, dynamic>.from(
+          teamsSnap.value as Map);
 
       for (final entry in teams.entries) {
         final teamId = entry.key;
-        final data = Map<String, dynamic>.from(entry.value as Map);
+        final data = Map<String, dynamic>.from(
+            entry.value as Map);
 
         final leadId = data['lead_id']?.toString() ?? '';
         final memberIds = data['member_ids'];
 
         bool belongs = leadId == userId;
         if (!belongs && memberIds is List) {
-          belongs = memberIds.any((id) => id.toString() == userId);
+          belongs = memberIds.any(
+              (id) => id.toString() == userId);
         }
 
         if (belongs) {
@@ -105,15 +176,23 @@ class AuthProvider extends ChangeNotifier {
 
           _user = _user!.copyWith(teamId: teamId, role: role);
           await _repo.upsert(_user!);
-          notifyListeners();
 
-          debugPrint('[Auth] Restored team: $teamId as ${role.name}');
+          // Save for future direct lookups
+          await FirebaseDatabase.instance
+              .ref('users/$userId/teamId')
+              .set(teamId);
+
+          notifyListeners();
+          debugPrint('[Auth] Restored team via scan: '
+              '$teamId as ${role.name}');
           return;
         }
       }
-      debugPrint('[AuthProvider] _tryRestoreTeam: no team found for $userId');
+
+      debugPrint('[AuthProvider] _tryRestoreTeam: '
+          'no team found for $userId');
     } catch (e) {
-      debugPrint('_tryRestoreTeam error: $e');
+      debugPrint('[Auth] _tryRestoreTeam error: $e');
     }
   }
 
@@ -154,6 +233,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> signInWithGoogle() async {
+    _loading = false;
+    _error = null;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -197,11 +278,15 @@ class AuthProvider extends ChangeNotifier {
       }
 
       _user = existing;
+      debugPrint('[Auth] _user set: ${_user?.id}');
+      debugPrint('[Auth] _user null? ${_user == null}');
 
       // Restore team from Firebase if SQLite has no teamId
       if (!_user!.hasTeam) {
         await _tryRestoreTeam(_user!.id);
       }
+      debugPrint('[Auth] after restore: ${_user?.teamId}');
+      debugPrint('[Auth] _user still set: ${_user?.id}');
 
       debugPrint('[AuthProvider] teamId after restore: ${_user?.teamId}');
       debugPrint('[AuthProvider] hasTeam: ${_user?.hasTeam}');
@@ -214,8 +299,10 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     } finally {
+      debugPrint('[Auth] finally: _user=${_user?.id} loading=$_loading');
       _loading = false;
       notifyListeners();
+      debugPrint('[Auth] notifyListeners firing now');
     }
   }
 
@@ -228,7 +315,55 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {}
     _user = null;
     _error = null;
+    _loading = false;
     notifyListeners();
+  }
+
+  Future<bool> leaveTeam() async {
+    if (_user == null) return false;
+
+    final teamId = _user!.teamId;
+    final userId = _user!.id;
+
+    try {
+      final db = FirebaseDatabase.instance;
+
+      await db
+          .ref('users/$userId/teamId')
+          .remove();
+
+      if (teamId != null && teamId.isNotEmpty) {
+        final memberRef = db.ref('teams/$teamId/member_ids');
+        final snap = await memberRef
+            .get()
+            .timeout(const Duration(seconds: 5));
+
+        if (snap.exists && snap.value != null) {
+          final ids = List<dynamic>.from(
+              snap.value as List);
+          ids.removeWhere(
+              (id) => id.toString() == userId);
+          await memberRef.set(ids);
+          debugPrint('[Auth] Removed user '
+              'from team member_ids');
+        }
+      }
+
+      final updated = _user!.copyWith(
+        teamId: '',
+        role: UserRole.teamMember,
+      );
+      await _repo.upsert(updated);
+      _user = updated;
+      _error = null;
+      debugPrint('[AuthProvider] Left team successfully');
+      debugPrint('[AuthProvider] hasTeam: ${_user?.hasTeam}');
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[AuthProvider] leaveTeam error: $e');
+      return false;
+    }
   }
 
   void refresh(UserModel u) { _user = u; notifyListeners(); }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import '../data/models/team_model.dart';
 import '../data/models/task_model.dart';
@@ -20,6 +21,7 @@ class TeamProvider extends ChangeNotifier {
   String? _activeTeamId;
   String? _currentTeamId;
   final _taskRepo = TaskRepository();
+  final Set<String> _deletedTaskIds = {};
 
   TeamModel? get team => _team;
   List<TaskModel> get tasks => _tasks;
@@ -48,32 +50,55 @@ class TeamProvider extends ChangeNotifier {
     try {
       final cached = await _taskRepo.getByTeamId(teamId);
       if (cached.isNotEmpty) {
-        _tasks = cached;
+        _tasks = cached.map((t) =>
+            t.status == TaskStatus.completed && t.progress < 100
+                ? t.copyWith(progress: 100)
+                : t).toList();
         notifyListeners();
       }
       _team = await _svc.getTeam(teamId);
       if (_team != null && !_streamStarted) {
-        _streamStarted = true;
-        final fresh = await _svc.fetchTasksOnce(teamId);
-        if (fresh.isNotEmpty) {
-          _tasks = fresh;
-          notifyListeners();
+        try {
+          final fresh = await _svc.fetchTasksOnce(teamId);
+          if (fresh.isNotEmpty) {
+            _tasks = fresh.map((t) =>
+                t.status == TaskStatus.completed && t.progress < 100
+                    ? t.copyWith(progress: 100)
+                    : t).toList();
+            notifyListeners();
+          }
+        } catch (e) {
+          debugPrint('[TeamProvider] fetchTasksOnce failed, '
+              'will rely on stream: $e');
+          // Continue — stream will provide data
         }
         _tasksSub = _svc.tasksStream(teamId).listen(
           (list) {
             if (list.isNotEmpty) {
               final now = DateTime.now();
-              _tasks = list.map((t) =>
-                t.status == TaskStatus.pending &&
-                now.isAfter(t.deadline)
-                  ? t.copyWith(status: TaskStatus.overdue)
-                  : t
-              ).toList();
+              final mapped = list.map((t) {
+                TaskModel result = t.status == TaskStatus.pending &&
+                        now.isAfter(t.deadline)
+                    ? t.copyWith(status: TaskStatus.overdue)
+                    : t;
+                if (result.status == TaskStatus.completed &&
+                    result.progress < 100) {
+                  result = result.copyWith(progress: 100);
+                }
+                return result;
+              }).toList();
+              _tasks = mapped
+                .where((t) => !_deletedTaskIds.contains(t.id))
+                .toList();
               notifyListeners();
             }
           },
-          onError: (_) {},
+          onError: (e) {
+            debugPrint('[TeamProvider] Stream error: $e');
+            _streamStarted = false;
+          },
         );
+        _streamStarted = true;
       }
     } catch (e) {
       _error = e.toString();
@@ -116,12 +141,20 @@ class TeamProvider extends ChangeNotifier {
         (list) {
           if (list.isNotEmpty) {
             final now = DateTime.now();
-            _tasks = list.map((task) =>
-              task.status == TaskStatus.pending &&
-              now.isAfter(task.deadline)
-                ? task.copyWith(status: TaskStatus.overdue)
-                : task
-            ).toList();
+            final mapped = list.map((task) {
+              TaskModel result = task.status == TaskStatus.pending &&
+                      now.isAfter(task.deadline)
+                  ? task.copyWith(status: TaskStatus.overdue)
+                  : task;
+              if (result.status == TaskStatus.completed &&
+                  result.progress < 100) {
+                result = result.copyWith(progress: 100);
+              }
+              return result;
+            }).toList();
+            _tasks = mapped
+              .where((t) => !_deletedTaskIds.contains(t.id))
+              .toList();
             notifyListeners();
           }
         },
@@ -150,12 +183,20 @@ class TeamProvider extends ChangeNotifier {
         (list) {
           if (list.isNotEmpty) {
             final now = DateTime.now();
-            _tasks = list.map((task) =>
-              task.status == TaskStatus.pending &&
-              now.isAfter(task.deadline)
-                ? task.copyWith(status: TaskStatus.overdue)
-                : task
-            ).toList();
+            final mapped = list.map((task) {
+              TaskModel result = task.status == TaskStatus.pending &&
+                      now.isAfter(task.deadline)
+                  ? task.copyWith(status: TaskStatus.overdue)
+                  : task;
+              if (result.status == TaskStatus.completed &&
+                  result.progress < 100) {
+                result = result.copyWith(progress: 100);
+              }
+              return result;
+            }).toList();
+            _tasks = mapped
+              .where((t) => !_deletedTaskIds.contains(t.id))
+              .toList();
             notifyListeners();
           }
         },
@@ -213,4 +254,70 @@ class TeamProvider extends ChangeNotifier {
     await _svc.updateTask(updated);
     return updated;
   }
+
+  Future<void> deleteTask(String taskId, String teamId) async {
+    // STEP 1: Remove from local list IMMEDIATELY — UI updates at once
+    _tasks.removeWhere((t) => t.id == taskId);
+    _deletedTaskIds.add(taskId);
+    notifyListeners();
+
+    // Auto-clear the guard after 30 s to avoid memory leak
+    Future.delayed(const Duration(seconds: 30), () {
+      _deletedTaskIds.remove(taskId);
+    });
+
+    try {
+      // STEP 2: Delete from SQLite
+      await _taskRepo.deleteById(taskId);
+
+      // STEP 3: Delete from Firebase
+      await FirebaseDatabase.instance
+          .ref('team_tasks/$teamId/$taskId')
+          .remove()
+          .timeout(const Duration(seconds: 10));
+
+      debugPrint('[TeamProvider] Task deleted from Firebase: $taskId');
+    } catch (e) {
+      debugPrint('[TeamProvider] Delete error: $e');
+      // Task already removed from UI; if Firebase still has it,
+      // the stream filter will block it from reappearing for 30 s.
+    }
+  }
+
+  void removeTaskLocally(String taskId) {
+    _tasks.removeWhere((t) => t.id == taskId);
+    _deletedTaskIds.add(taskId);
+    notifyListeners();
+    debugPrint('[TeamProvider] Task removed locally: $taskId');
+    Future.delayed(const Duration(seconds: 60), () {
+      _deletedTaskIds.remove(taskId);
+    });
+  }
+
+  Future<void> deleteTaskFromDb(String taskId) async {
+    try {
+      await _taskRepo.deleteById(taskId);
+      debugPrint('[TeamProvider] Task deleted from SQLite: $taskId');
+    } catch (e) {
+      debugPrint('[TeamProvider] SQLite delete error: $e');
+    }
+  }
+
+  Future<void> updateTaskProgress(
+      String taskId, int progress, String status) async {
+    final idx = _tasks.indexWhere((t) => t.id == taskId);
+    if (idx == -1) return;
+    _tasks[idx] = _tasks[idx].copyWith(
+      progress: progress,
+      status: _statusFromString(status),
+    );
+    notifyListeners();
+    await _taskRepo.updateProgress(taskId, progress, status);
+  }
+
+  TaskStatus _statusFromString(String s) =>
+      TaskStatus.values.firstWhere(
+        (e) => e.name == s,
+        orElse: () => TaskStatus.pending,
+      );
 }

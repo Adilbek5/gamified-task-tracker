@@ -11,11 +11,13 @@ class ChallengeService {
     required String teamId,
     required DateTime startDate,
     required DateTime endDate,
+    int prizeCoins = 0,
   }) async {
     final id = _uuid.v4();
     final c = ChallengeModel(
         id: id, title: title, teamId: teamId,
-        startDate: startDate, endDate: endDate);
+        startDate: startDate, endDate: endDate,
+        prizeCoins: prizeCoins);
     await _db.ref('challenges/$teamId/$id').set(c.toFirebase());
     return c;
   }

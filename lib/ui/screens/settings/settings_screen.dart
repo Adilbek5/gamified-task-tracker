@@ -345,6 +345,97 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Text('DANGER ZONE', style: _sectionStyle),
                   const SizedBox(height: 12),
 
+                  // LEAVE TEAM
+                  ListTile(
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF191D30),
+                        borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(
+                        Icons.group_remove_outlined,
+                        color: Color(0xFFFFB800),
+                        size: 20)),
+                    title: const Text(
+                      'Leave Team',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFFFFB800),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
+                    subtitle: const Text(
+                      'Stay logged in but leave your current team',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF848A94),
+                        fontSize: 11)),
+                    onTap: () async {
+                      final user = context.read<AuthProvider>().user;
+                      if (user == null || !user.hasTeam) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('You are not in a team',
+                              style: TextStyle(fontFamily: 'Poppins')),
+                            backgroundColor: Color(0xFF848A94)));
+                        return;
+                      }
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: const Color(0xFF191D30),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                          title: const Text(
+                            'Leave Team?',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w600)),
+                          content: const Text(
+                            'You will stay logged in but lose access '
+                            'to your current team and its tasks. '
+                            'You can join or create a new team afterwards.',
+                            style: TextStyle(
+                              color: Color(0xFF848A94),
+                              fontFamily: 'Poppins',
+                              fontSize: 13)),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel',
+                                style: TextStyle(
+                                  color: Color(0xFF848A94),
+                                  fontFamily: 'Poppins'))),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFFFB800),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8))),
+                              child: const Text('Leave',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Poppins',
+                                  fontWeight: FontWeight.w600))),
+                          ],
+                        ),
+                      );
+                      if (confirm == true && context.mounted) {
+                        context.read<TeamProvider>().clearTeamData();
+                        final ok = await context.read<AuthProvider>().leaveTeam();
+                        if (ok && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Left team successfully',
+                                style: TextStyle(fontFamily: 'Poppins')),
+                              backgroundColor: Color(0xFF22C55E),
+                              behavior: SnackBarBehavior.floating));
+                        }
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
                   // SIGN OUT
                   GestureDetector(
                     onTap: _signOut,
