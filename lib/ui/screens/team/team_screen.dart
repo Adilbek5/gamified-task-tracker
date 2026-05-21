@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/activity_provider.dart';
-import '../../../services/activity_service.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/repositories/user_repository.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/team_provider.dart';
 import '../../../services/team_service.dart';
+import '../../../widgets/animated_list_tile.dart';
 
 class TeamScreen extends StatefulWidget {
   final UserModel user;
@@ -406,82 +406,89 @@ class _TeamScreenState extends State<TeamScreen> {
                               color: Color(0xFF848A94))),
                         ]),
                         const SizedBox(height: 10),
-                        ...activity.members.map((m) => Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF191D30),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: m.isOnline
-                                ? const Color(0xFF22C55E).withValues(alpha: 0.15)
-                                : const Color(0xFF191D30))),
-                          child: Row(children: [
-                            Stack(children: [
-                              Container(
-                                width: 42, height: 42,
-                                decoration: BoxDecoration(
-                                  color: m.skillColor.withValues(alpha: 0.15),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: m.skillColor.withValues(alpha: 0.4),
-                                    width: 1.5)),
-                                child: Center(child: Text(m.skillEmoji,
-                                  style: const TextStyle(fontSize: 18)))),
-                              Positioned(right: 0, bottom: 0,
-                                child: Container(
-                                  width: 12, height: 12,
-                                  decoration: BoxDecoration(
-                                    color: m.isOnline
-                                      ? const Color(0xFF22C55E)
-                                      : const Color(0xFF848A94),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0xFF191D30),
-                                      width: 2)))),
-                            ]),
-                            const SizedBox(width: 12),
-                            Expanded(child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(children: [
-                                  Text(m.name,
-                                    style: const TextStyle(
-                                      fontFamily: 'Poppins', fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white)),
-                                  const SizedBox(width: 8),
+                        // ── members list (AnimatedListTile) ──────────────
+                        ...activity.members.asMap().entries.map<Widget>((entry) {
+                          final m = entry.value;
+                          return AnimatedListTile(
+                            index: entry.key,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF191D30),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: m.isOnline
+                                    ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+                                    : const Color(0xFF191D30))),
+                              child: Row(children: [
+                                Stack(children: [
                                   Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
+                                    width: 42, height: 42,
                                     decoration: BoxDecoration(
-                                      color: m.skillColor.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(6)),
-                                    child: Text(m.skillLabel,
-                                      style: TextStyle(
-                                        fontFamily: 'Poppins', fontSize: 9,
-                                        fontWeight: FontWeight.w600,
-                                        color: m.skillColor))),
+                                      color: m.skillColor.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: m.skillColor.withValues(alpha: 0.4),
+                                        width: 1.5)),
+                                    child: Center(child: Text(m.skillEmoji,
+                                      style: const TextStyle(fontSize: 18)))),
+                                  Positioned(right: 0, bottom: 0,
+                                    child: Container(
+                                      width: 12, height: 12,
+                                      decoration: BoxDecoration(
+                                        color: m.isOnline
+                                          ? const Color(0xFF22C55E)
+                                          : const Color(0xFF848A94),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFF191D30),
+                                          width: 2)))),
                                 ]),
-                                const SizedBox(height: 3),
-                                if (!m.isOnline)
-                                  const Text('Offline',
-                                    style: TextStyle(fontFamily: 'Poppins',
-                                      fontSize: 12, color: Color(0xFF545A64)))
-                                else if (m.hasActiveTask)
-                                  Text('Working on: ${m.currentTaskTitle}',
-                                    style: const TextStyle(
-                                      fontFamily: 'Poppins', fontSize: 12,
-                                      color: Color(0xFF3580FF)),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis)
-                                else
-                                  const Text('Online · No active task',
-                                    style: TextStyle(fontFamily: 'Poppins',
-                                      fontSize: 12, color: Color(0xFF22C55E))),
-                              ])),
-                          ])),
-                        ),
+                                const SizedBox(width: 12),
+                                Expanded(child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(children: [
+                                      Text(m.name,
+                                        style: const TextStyle(
+                                          fontFamily: 'Poppins', fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white)),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: m.skillColor.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6)),
+                                        child: Text(m.skillLabel,
+                                          style: TextStyle(
+                                            fontFamily: 'Poppins', fontSize: 9,
+                                            fontWeight: FontWeight.w600,
+                                            color: m.skillColor))),
+                                    ]),
+                                    const SizedBox(height: 3),
+                                    if (!m.isOnline)
+                                      const Text('Offline',
+                                        style: TextStyle(fontFamily: 'Poppins',
+                                          fontSize: 12, color: Color(0xFF545A64)))
+                                    else if (m.hasActiveTask)
+                                      Text('Working on: ${m.currentTaskTitle}',
+                                        style: const TextStyle(
+                                          fontFamily: 'Poppins', fontSize: 12,
+                                          color: Color(0xFF3580FF)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis)
+                                    else
+                                      const Text('Online · No active task',
+                                        style: TextStyle(fontFamily: 'Poppins',
+                                          fontSize: 12, color: Color(0xFF22C55E))),
+                                  ])),
+                              ]),
+                            ),
+                          );
+                        }),
                         const SizedBox(height: 16),
                       ],
                     );
@@ -531,76 +538,82 @@ class _TeamScreenState extends State<TeamScreen> {
                                 fontSize: 12))),
                   )
                 else
-                  ...team.tasks.map((t) => Container(
-                    margin: const EdgeInsets.only(
-                        bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius:
-                        BorderRadius.circular(10),
-                        border: Border.all(
-                            color: AppColors.border,
-                            width: 0.5)),
-                    child: Row(children: [
-                      Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                              color: t.difficulty >= 8
-                                  ? AppColors.danger
-                                  : t.difficulty >= 5
-                                  ? AppColors.warning
-                                  : AppColors.success,
-                              shape: BoxShape.circle)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
-                          children: [
-                            Text(t.title,
-                                style: const TextStyle(
-                                    color: AppColors
-                                        .textPrimary,
-                                    fontSize: 13)),
-                            Text(
-                                'Diff ${t.difficulty}/10 · ${t.status.name}',
-                                style: const TextStyle(
-                                    color: AppColors
-                                        .textMuted,
-                                    fontSize: 10)),
-                          ],
-                        ),
-                      ),
-                      Container(
-                          padding:
-                          const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2),
-                          decoration: BoxDecoration(
-                              color: t.status.name ==
-                                  'completed'
-                                  ? AppColors.success
-                                  .withValues(alpha: 0.15)
-                                  : AppColors.primary
-                                  .withValues(alpha: 0.12),
-                              borderRadius:
-                              BorderRadius.circular(
-                                  20)),
-                          child: Text(
-                              '${t.difficulty * 10} XP',
-                              style: TextStyle(
+                  // ── team tasks list (AnimatedListTile) ───────────
+                  ...team.tasks.asMap().entries.map<Widget>((entry) {
+                    final t = entry.value;
+                    return AnimatedListTile(
+                      index: entry.key,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius:
+                            BorderRadius.circular(10),
+                            border: Border.all(
+                                color: AppColors.border,
+                                width: 0.5)),
+                        child: Row(children: [
+                          Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                  color: t.difficulty >= 8
+                                      ? AppColors.danger
+                                      : t.difficulty >= 5
+                                      ? AppColors.warning
+                                      : AppColors.success,
+                                  shape: BoxShape.circle)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                              children: [
+                                Text(t.title,
+                                    style: const TextStyle(
+                                        color: AppColors
+                                            .textPrimary,
+                                        fontSize: 13)),
+                                Text(
+                                    'Diff ${t.difficulty}/10 · ${t.status.name}',
+                                    style: const TextStyle(
+                                        color: AppColors
+                                            .textMuted,
+                                        fontSize: 10)),
+                              ],
+                            ),
+                          ),
+                          Container(
+                              padding:
+                              const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2),
+                              decoration: BoxDecoration(
                                   color: t.status.name ==
                                       'completed'
                                       ? AppColors.success
-                                      : AppColors
-                                      .primaryLight,
-                                  fontSize: 9,
-                                  fontWeight:
-                                  FontWeight.w500))),
-                    ]),
-                  )),
+                                      .withValues(alpha: 0.15)
+                                      : AppColors.primary
+                                      .withValues(alpha: 0.12),
+                                  borderRadius:
+                                  BorderRadius.circular(
+                                      20)),
+                              child: Text(
+                                  '${t.difficulty * 10} XP',
+                                  style: TextStyle(
+                                      color: t.status.name ==
+                                          'completed'
+                                          ? AppColors.success
+                                          : AppColors
+                                          .primaryLight,
+                                      fontSize: 9,
+                                      fontWeight:
+                                      FontWeight.w500))),
+                        ]),
+                      ),
+                    );
+                  }),
               ],
           ],
         ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,7 @@ class AuthProvider extends ChangeNotifier {
   UserModel? _user;
   bool _loading = false;
   String? _error;
+  StreamSubscription<User?>? _authSub;
 
   UserModel? get user => _user;
   bool get loading => _loading;
@@ -22,7 +24,7 @@ class AuthProvider extends ChangeNotifier {
   AuthService get authSvc => _auth;
 
   AuthProvider(this._auth, this._repo) {
-    FirebaseAuth.instance.authStateChanges().listen(
+    _authSub = FirebaseAuth.instance.authStateChanges().listen(
       (firebaseUser) async {
         debugPrint('[AuthProvider] authStateChanges: '
             '${firebaseUser?.uid}');
@@ -44,6 +46,12 @@ class AuthProvider extends ChangeNotifier {
         }
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   Future<void> loadUser() async {
@@ -233,8 +241,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> signInWithGoogle() async {
-    _loading = false;
-    _error = null;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -339,8 +345,10 @@ class AuthProvider extends ChangeNotifier {
             .timeout(const Duration(seconds: 5));
 
         if (snap.exists && snap.value != null) {
-          final ids = List<dynamic>.from(
-              snap.value as List);
+          final raw = snap.value;
+          final ids = raw is List
+              ? List<dynamic>.from(raw)
+              : List<dynamic>.from((raw as Map).values);
           ids.removeWhere(
               (id) => id.toString() == userId);
           await memberRef.set(ids);

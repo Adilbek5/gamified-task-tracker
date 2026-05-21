@@ -14,7 +14,6 @@ import '../../../providers/challenge_provider.dart';
 import '../../../providers/gamification_provider.dart';
 import '../../../providers/task_provider.dart';
 import '../../../providers/team_provider.dart';
-import '../../widgets/circular_progress_widget.dart';
 import '../../widgets/overlapping_avatars.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -30,55 +29,30 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   List<SubtaskModel> _subtasks = [];
   bool _loadingSubtasks = true;
   final _subtaskController = TextEditingController();
+  late TaskStatus _localStatus;
 
   // ── computed helpers ────────────────────────────────────
 
-  double get _progress {
-    if (widget.task.status == TaskStatus.completed) return 1.0;
-    if (!_loadingSubtasks && _subtasks.isNotEmpty) {
-      return _subtasks.where((s) => s.isCompleted).length / _subtasks.length;
+  double get _progressValue {
+    if (_localStatus == TaskStatus.completed) return 1.0;
+    if (_subtasks.isEmpty) {
+      return (widget.task.progress / 100).clamp(0.0, 1.0);
     }
-    switch (widget.task.status) {
-      case TaskStatus.inProgress:
-        return 0.5;
-      default:
-        return 0.0;
-    }
+    final done = _subtasks.where((s) => s.isCompleted).length;
+    return done / _subtasks.length;
   }
 
-  Color get _progressColor {
-    switch (widget.task.status) {
-      case TaskStatus.completed:
-        return AppColors.success;
-      case TaskStatus.overdue:
-        return AppColors.danger;
-      default:
-        return AppColors.primary;
-    }
-  }
+  int get _progressPercent => (_progressValue * 100).round();
 
-  String get _centerText {
-    if (widget.task.status == TaskStatus.completed) return '100%';
-    if (!_loadingSubtasks && _subtasks.isNotEmpty) {
-      final done = _subtasks.where((s) => s.isCompleted).length;
-      return '$done/${_subtasks.length}';
+  Color get _ringColor {
+    if (_localStatus == TaskStatus.completed || _progressPercent >= 100) {
+      return const Color(0xFF22C55E);
     }
-    if (widget.task.status == TaskStatus.overdue) {
-      final days = DateTime.now().difference(widget.task.deadline).inDays;
-      return '${days}d';
-    }
-    return '${(_progress * 100).toInt()}%';
-  }
-
-  String get _subText {
-    if (widget.task.status == TaskStatus.completed) return 'done';
-    if (!_loadingSubtasks && _subtasks.isNotEmpty) return 'subtasks';
-    if (widget.task.status == TaskStatus.overdue) return 'overdue';
-    return 'complete';
+    return const Color(0xFF3580FF);
   }
 
   Color get _statusColor {
-    switch (widget.task.status) {
+    switch (_localStatus) {
       case TaskStatus.completed:
         return AppColors.success;
       case TaskStatus.overdue:
@@ -91,7 +65,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   String get _statusLabel {
-    switch (widget.task.status) {
+    switch (_localStatus) {
       case TaskStatus.completed:
         return 'Completed';
       case TaskStatus.overdue:
@@ -114,6 +88,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _localStatus = widget.task.status;
     _loadSubtasks();
   }
 
@@ -166,8 +141,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         final done = _subtasks.where((s) => s.isCompleted).length;
         final newProgress =
             total > 0 ? ((done / total) * 100).round() : 0;
+        // Use live status from provider — _localStatus may lag behind Firebase
+        final liveTask = context
+            .read<TeamProvider>()
+            .tasks
+            .firstWhere(
+              (t) => t.id == widget.task.id,
+              orElse: () => widget.task,
+            );
         context.read<TeamProvider>().updateTaskProgress(
-            widget.task.id, newProgress, widget.task.status.name);
+            widget.task.id, newProgress, liveTask.status.name);
       }
     }
   }
@@ -183,6 +166,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   // ── complete task ───────────────────────────────────────
 
   Future<void> _complete() async {
+    // Guard: all subtasks must be ticked first
+    if (_subtasks.isNotEmpty && !_subtasks.every((s) => s.isCompleted)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complete all subtasks first!'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Capture providers before any await
     final auth = context.read<AuthProvider>();
     if (auth.user == null) return;
     final user = auth.user!;
@@ -192,57 +188,88 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final gam = context.read<GamificationProvider>();
     final cp = context.read<ChallengeProvider>();
 
-    final completed = await taskProvider.completeTask(widget.task.id);
-    if (widget.task.teamId.isNotEmpty) {
-      await teamProv.updateTaskProgress(widget.task.id, 100, 'completed');
-    }
-    final result = await gam.handleCompletion(completed, user);
+    try {
+      final isTeamTask = user.hasTeam && widget.task.teamId.isNotEmpty;
 
-    if (completed.xpEarned > 0 &&
-        user.teamId != null &&
-        user.teamId!.isNotEmpty) {
-      for (final challenge in cp.challenges) {
-        if (challenge.isActive &&
-            challenge.participantIds.contains(user.id)) {
-          await cp.addXp(
-            user.teamId!,
-            challenge.id,
-            user.id,
-            user.name,
-            completed.xpEarned,
-          );
+      final TaskModel completed;
+      if (isTeamTask) {
+        // completeTask writes to Firebase (status + progress:100 + completedAt)
+        completed = await teamProv.completeTask(widget.task.id, user);
+        // updateTaskProgress syncs local state, SQLite, and Firebase progress field
+        await teamProv.updateTaskProgress(widget.task.id, 100, 'completed');
+      } else {
+        completed = await taskProvider.completeTask(widget.task.id);
+      }
+
+      final result = await gam.handleCompletion(completed, user);
+
+      // Refresh dashboard XP/coins immediately
+      if (gam.user != null && mounted) {
+        auth.refresh(gam.user!);
+      }
+
+      // Challenge XP uses the gamification-adjusted value (respects xpMultiplier)
+      if (result.xpEarned > 0 &&
+          user.teamId != null &&
+          user.teamId!.isNotEmpty) {
+        for (final challenge in cp.challenges) {
+          if (challenge.isActive &&
+              challenge.participantIds.contains(user.id)) {
+            await cp.addXp(
+              user.teamId!,
+              challenge.id,
+              user.id,
+              user.name,
+              result.xpEarned,
+            );
+          }
         }
       }
-    }
 
-    if (mounted) {
-      final xp = result.xpEarned;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.success,
-        content: Text(
-          xp > 0 ? 'Task complete! +$xp XP earned' : 'Task marked complete',
-          style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.w500),
-        ),
-        duration: const Duration(seconds: 3),
-      ));
+      if (mounted) {
+        // Flip the ring to green immediately — no round-trip needed
+        setState(() => _localStatus = TaskStatus.completed);
 
-      if (result.achievements.isNotEmpty) {
-        Future.delayed(const Duration(milliseconds: 600), () {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              backgroundColor: AppColors.warning,
-              content: Text(
-                'Achievement: ${result.achievements.first.title}',
-                style: const TextStyle(color: Colors.white),
-              ),
-              duration: const Duration(seconds: 3),
-            ));
-          }
-        });
+        final xp = result.xpEarned;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text(
+            xp > 0
+                ? '✅ Task complete! +$xp XP earned'
+                : '✅ Task marked complete',
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w500),
+          ),
+          duration: const Duration(seconds: 3),
+        ));
+
+        if (result.achievements.isNotEmpty) {
+          Future.delayed(const Duration(milliseconds: 600), () {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                backgroundColor: AppColors.warning,
+                content: Text(
+                  'Achievement: ${result.achievements.first.title}',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                duration: const Duration(seconds: 3),
+              ));
+            }
+          });
+        }
+
+        await Future.delayed(const Duration(milliseconds: 1200));
+        if (mounted) Navigator.pop(context);
       }
-
-      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('[TaskDetail] complete error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e',
+              style: const TextStyle(fontFamily: 'Poppins')),
+          backgroundColor: AppColors.danger,
+        ));
+      }
     }
   }
 
@@ -254,8 +281,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final auth = context.watch<AuthProvider>();
     final currentUser = auth.user;
 
-    final canComplete = widget.task.status != TaskStatus.completed &&
-        widget.task.status != TaskStatus.overdue;
+    final canComplete = _localStatus != TaskStatus.completed;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D14),
@@ -413,13 +439,30 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
             // ── circular progress ─────────────────────
             Center(
-              child: CircularProgressWidget(
-                progress: _progress,
-                centerText: _centerText,
-                subText: _subText,
-                progressColor: _progressColor,
-                size: 120,
-                strokeWidth: 8,
+              child: SizedBox(
+                width: 120,
+                height: 120,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: _progressValue,
+                      strokeWidth: 8,
+                      backgroundColor: const Color(0xFF2A2D3E),
+                      valueColor: AlwaysStoppedAnimation<Color>(_ringColor),
+                    ),
+                    Text(
+                      _localStatus == TaskStatus.completed
+                          ? '100%'
+                          : '$_progressPercent%',
+                      style: TextStyle(
+                        color: _ringColor,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -527,7 +570,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               onToggle: _toggleSubtask,
               onDelete: _deleteSubtask,
               taskCompleted:
-                  widget.task.status == TaskStatus.completed,
+                  _localStatus == TaskStatus.completed,
             ),
 
             const SizedBox(height: 24),
@@ -547,7 +590,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         ),
       ),
       // ── bottom button ─────────────────────────────
-      bottomNavigationBar: widget.task.status == TaskStatus.completed
+      bottomNavigationBar: _localStatus == TaskStatus.completed
           ? Container(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
               color: const Color(0xFF0D0D14),
@@ -687,12 +730,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   Widget _buildTimeline() {
     final events = <_TimelineEvent>[];
-
-    events.add(_TimelineEvent(
-      label: 'Task created',
-      date: widget.task.deadline.subtract(const Duration(days: 1)),
-      color: AppColors.primary,
-    ));
 
     if (widget.task.status == TaskStatus.inProgress) {
       events.add(_TimelineEvent(

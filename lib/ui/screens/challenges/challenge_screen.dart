@@ -7,6 +7,7 @@ import '../../../data/models/challenge_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../providers/challenge_provider.dart';
 import 'challenge_detail_screen.dart';
+import '../../../widgets/animated_list_tile.dart';
 
 class ChallengeScreen extends StatefulWidget {
   final UserModel user;
@@ -74,20 +75,24 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                         fontSize: 13)),
               )
             else
-              ...cp.challenges.map((c) {
-                return _ChallengeCard(
-                  challenge: c,
-                  user: widget.user,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChallengeDetailScreen(
-                        challenge: c,
-                        user: widget.user,
+              ...cp.challenges.asMap().entries.map<Widget>((entry) {
+                final c = entry.value;
+                return AnimatedListTile(
+                  index: entry.key,
+                  child: _ChallengeCard(
+                    challenge: c,
+                    user: widget.user,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChallengeDetailScreen(
+                          challenge: c,
+                          user: widget.user,
+                        ),
                       ),
                     ),
+                    leaderboard: cp.leaderboardFor(c.id),
                   ),
-                  leaderboard: cp.leaderboardFor(c.id),
                 );
               }),
           ],

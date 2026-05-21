@@ -6,6 +6,7 @@ import '../../../data/models/shop_item_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/shop_provider.dart';
+import '../../../widgets/animated_card.dart';
 
 class ShopScreen extends StatefulWidget {
   final UserModel user;
@@ -342,11 +343,14 @@ class _ShopScreenState extends State<ShopScreen>
                           childAspectRatio: 0.85,
                         ),
                         itemCount: items.length,
-                        itemBuilder: (_, idx) => _ItemCard(
-                          item: items[idx],
-                          user: user,
-                          shop: shop,
-                          onTap: () => _onItemTap(items[idx]),
+                        itemBuilder: (_, idx) => AnimatedCard(
+                          index: idx,
+                          child: _ItemCard(
+                            item: items[idx],
+                            user: user,
+                            shop: shop,
+                            onTap: () => _onItemTap(items[idx]),
+                          ),
                         ),
                       );
                     }),

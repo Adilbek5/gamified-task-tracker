@@ -246,12 +246,29 @@ class TeamProvider extends ChangeNotifier {
     final onTime = now.isBefore(task.deadline);
     final updated = task.copyWith(
       status: TaskStatus.completed,
+      progress: 100,
       completedAt: now,
       xpEarned: onTime ? task.difficulty * 10 : 0,
       assignedUserId: completer.id,
       assignedUserName: completer.name,
     );
     await _svc.updateTask(updated);
+
+    try {
+      await FirebaseDatabase.instance
+          .ref('team_tasks/${task.teamId}/$taskId')
+          .update({
+        'status': 'completed',
+        'progress': 100,
+        'completed_at': now.toIso8601String(),
+        'xp_earned': updated.xpEarned,
+        'assigned_user_id': completer.id,
+        'assigned_user_name': completer.name,
+      });
+    } catch (e) {
+      debugPrint('[TeamProvider] completeTask Firebase update error: $e');
+    }
+
     return updated;
   }
 
@@ -307,12 +324,36 @@ class TeamProvider extends ChangeNotifier {
       String taskId, int progress, String status) async {
     final idx = _tasks.indexWhere((t) => t.id == taskId);
     if (idx == -1) return;
+
     _tasks[idx] = _tasks[idx].copyWith(
       progress: progress,
       status: _statusFromString(status),
     );
     notifyListeners();
-    await _taskRepo.updateProgress(taskId, progress, status);
+
+    try {
+      await _taskRepo.updateProgress(taskId, progress, status);
+      debugPrint('[TeamProvider] SQLite updated: $taskId → $progress% ($status)');
+    } catch (e) {
+      debugPrint('[TeamProvider] SQLite updateProgress error: $e');
+    }
+
+    try {
+      final task = _tasks[idx];
+      final update = <String, dynamic>{
+        'progress': progress,
+        'status': status,
+      };
+      if (status == 'completed') {
+        update['completed_at'] = DateTime.now().toIso8601String();
+      }
+      await FirebaseDatabase.instance
+          .ref('team_tasks/${task.teamId}/$taskId')
+          .update(update);
+      debugPrint('[TeamProvider] Firebase updated: $taskId → $progress% ($status)');
+    } catch (e) {
+      debugPrint('[TeamProvider] Firebase updateProgress error: $e');
+    }
   }
 
   TaskStatus _statusFromString(String s) =>

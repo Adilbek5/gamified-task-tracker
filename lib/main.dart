@@ -21,9 +21,7 @@ import 'services/challenge_service.dart';
 import 'services/gamification_service.dart';
 import 'services/sync_service.dart';
 import 'services/team_service.dart';
-import 'ui/screens/auth/login_screen.dart';
-import 'ui/screens/auth/team_setup_screen.dart';
-import 'ui/screens/dashboard/dashboard_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -100,7 +98,7 @@ class _AppState extends State<App> {
             primary: AppColors.primary,
             surface: AppColors.surface),
         ),
-        home: const AppEntry(),
+        home: const SplashScreen(),
       ),
     );
   }
@@ -109,69 +107,3 @@ class _AppState extends State<App> {
 // Global navigator key — accessible from anywhere
 final GlobalKey<NavigatorState> navigatorKey =
     GlobalKey<NavigatorState>();
-
-class AppEntry extends StatefulWidget {
-  const AppEntry({super.key});
-  @override
-  State<AppEntry> createState() => _AppEntryState();
-}
-
-class _AppEntryState extends State<AppEntry> {
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
-    });
-  }
-
-  Future<void> _initialize() async {
-    try {
-      final auth = context.read<AuthProvider>();
-      await auth.loadUser();
-      if (!mounted) return;
-      final user = auth.user;
-      if (user != null && user.hasTeam) {
-        await context.read<TeamProvider>().loadTeam(user);
-      }
-    } catch (e) {
-      debugPrint('[AppEntry] init error: $e');
-    } finally {
-      if (mounted) setState(() => _initialized = true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    debugPrint('[AppEntry] provider hash: '
-        '${identityHashCode(auth)}');
-
-    debugPrint('[AppEntry] build — '
-        'initialized=$_initialized '
-        'isAuth=${auth.isAuthenticated} '
-        'hasTeam=${auth.user?.hasTeam}');
-
-    if (!_initialized) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0A0C16),
-        body: Center(
-          child: CircularProgressIndicator(
-            color: Color(0xFF3580FF))));
-    }
-
-    final user = auth.user;
-
-    if (!auth.isAuthenticated || user == null) {
-      return const LoginScreen(key: ValueKey('login'));
-    }
-
-    if (user.hasTeam) {
-      return const DashboardScreen(key: ValueKey('dashboard'));
-    }
-
-    return const TeamSetupScreen(key: ValueKey('teamsetup'));
-  }
-}

@@ -11,6 +11,7 @@ import '../../../providers/shop_provider.dart';
 import '../../../providers/task_provider.dart';
 import '../../../providers/team_provider.dart';
 import '../../widgets/task_progress_ring.dart';
+import '../../../widgets/animated_card.dart';
 import '../auth/login_screen.dart';
 import '../challenges/challenge_screen.dart';
 import '../tasks/create_task_screen.dart';
@@ -365,7 +366,8 @@ class _HomeTabState extends State<_HomeTab> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (ctx, i) => RepaintBoundary(
+                  (ctx, i) => AnimatedCard(
+                    index: i,
                     child: GestureDetector(
                       onTap: () {
                         Navigator.push(

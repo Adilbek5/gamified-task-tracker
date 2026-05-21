@@ -8,7 +8,8 @@
       "Bash(grep -Ev \"lib\\\\\\\\\\\\\\\\main\\\\.dart\")",
       "Bash(Get-Content \"C:\\\\Users\\\\5\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-5-StudioProjects-flutter-project\\\\8d67dbcf-b572-4c77-8f53-6cef90c212c0\\\\tasks\\\\bnosanj2m.output\" -Wait)",
       "Bash(Select-String -Pattern \"No issues|error|warning|info|Analyzing|done\" --SimpleMatch)",
-      "Bash(Get-ChildItem *)"
+      "Bash(Get-ChildItem *)",
+      "Bash(dart analyze *)"
     ]
   }
 }

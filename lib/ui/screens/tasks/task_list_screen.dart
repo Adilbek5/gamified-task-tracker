@@ -389,7 +389,6 @@ class _TaskCardState extends State<_TaskCard> {
   TaskModel get task => widget.task;
 
   Future<(int, int)>? _subtaskFuture;
-  String? _cachedTaskId;
 
   @override
   void initState() {
@@ -400,13 +399,13 @@ class _TaskCardState extends State<_TaskCard> {
   @override
   void didUpdateWidget(covariant _TaskCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.task.id != _cachedTaskId) {
-      setState(() => _initSubtaskFuture());
+    if (oldWidget.task.id != widget.task.id ||
+        oldWidget.task.progress != widget.task.progress) {
+      setState(_initSubtaskFuture);
     }
   }
 
   void _initSubtaskFuture() {
-    _cachedTaskId = widget.task.id;
     _subtaskFuture = AppDatabase.getSubtaskProgress(widget.task.id);
   }
 
@@ -480,7 +479,6 @@ class _TaskCardState extends State<_TaskCard> {
             final messenger = ScaffoldMessenger.of(context);
             try {
               await teamProv.startTask(task.id, user);
-              await teamProv.updateTaskProgress(task.id, 20, 'inProgress');
               await activityProv.onTaskStarted(user, task);
             } catch (e) {
               messenger.showSnackBar(SnackBar(
@@ -624,7 +622,7 @@ class _TaskCardState extends State<_TaskCard> {
             c.id,
             user.id,
             user.name,
-            completed.xpEarned,
+            result.xpEarned,
           );
           await cp.logActivity(
             user.teamId!,
