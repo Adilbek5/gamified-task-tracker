@@ -5,6 +5,8 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/xp_constants.dart';
+import '../../../data/database/app_database.dart';
+import '../../../data/models/subtask_model.dart';
 import '../../../data/models/task_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/repositories/user_repository.dart';
@@ -32,6 +34,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   String? _assignedUserName;
   bool _loadingMembers = false;
 
+  // Subtasks state
+  final List<String> _subtaskTitles = [];
+  final TextEditingController _subtaskCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +48,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   void dispose() {
     _title.dispose();
     _desc.dispose();
+    _subtaskCtrl.dispose();
     super.dispose();
   }
 
@@ -104,10 +111,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
     setState(() => _loading = true);
     try {
+      final newTaskId = const Uuid().v4();
       if (widget.user.hasTeam) {
         // Team task: save to SQLite + push to Firebase so all members see it
         final task = TaskModel(
-          id: const Uuid().v4(),
+          id: newTaskId,
           title: titleText,
           description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
           difficulty: _diff,
@@ -122,6 +130,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       } else {
         // Personal task: local SQLite only
         await context.read<TaskProvider>().createTask(
+              id: newTaskId,
               userId: widget.user.id,
               title: titleText,
               description: _desc.text.trim().isEmpty
@@ -134,6 +143,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               assignedUserName: _assignedUserName,
             );
       }
+      if (_subtaskTitles.isNotEmpty) {
+        for (int i = 0; i < _subtaskTitles.length; i++) {
+          await AppDatabase.insertSubtask(SubtaskModel(
+            id: const Uuid().v4(),
+            taskId: newTaskId,
+            title: _subtaskTitles[i],
+            sortOrder: i,
+          ));
+        }
+        debugPrint('[CreateTask] Saved ${_subtaskTitles.length} subtasks');
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -143,6 +163,137 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             backgroundColor: AppColors.danger));
       }
     }
+  }
+
+  void _addSubtask() {
+    final text = _subtaskCtrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() {
+      _subtaskTitles.add(text);
+      _subtaskCtrl.clear();
+    });
+  }
+
+  Widget _buildSubtasksSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 20, bottom: 10),
+          child: Text(
+            'Subtasks',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700),
+          ),
+        ),
+        if (_subtaskTitles.isNotEmpty)
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2235),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF2A2D3E)),
+            ),
+            child: Column(
+              children: _subtaskTitles.asMap().entries.map((entry) {
+                final i = entry.key;
+                final title = entry.value;
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    border: i < _subtaskTitles.length - 1
+                        ? const Border(
+                            bottom: BorderSide(color: Color(0xFF2A2D3E)))
+                        : null,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF3580FF),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(title,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 14)),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() => _subtaskTitles.removeAt(i));
+                        },
+                        child: Icon(
+                          Icons.close,
+                          size: 16,
+                          color: const Color(0xFF848A94).withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E2235),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF2A2D3E)),
+                ),
+                child: TextField(
+                  controller: _subtaskCtrl,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: const InputDecoration(
+                    hintText: 'Add a subtask...',
+                    hintStyle:
+                        TextStyle(color: Color(0xFF848A94), fontSize: 14),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  onSubmitted: (_) => _addSubtask(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _addSubtask,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3580FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.add, color: Colors.white, size: 20),
+              ),
+            ),
+          ],
+        ),
+        if (_subtaskTitles.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '${_subtaskTitles.length} subtask'
+              '${_subtaskTitles.length > 1 ? "s" : ""} added',
+              style: const TextStyle(
+                  color: Color(0xFF3580FF), fontSize: 11),
+            ),
+          ),
+      ],
+    );
   }
 
   Widget _buildAssignSection() {
@@ -280,6 +431,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               _lbl('Description (optional)'),
               const SizedBox(height: 6),
               _field(_desc, 'Details...', maxLines: 3),
+              _buildSubtasksSection(),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

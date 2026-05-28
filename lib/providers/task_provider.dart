@@ -62,6 +62,7 @@ class TaskProvider extends ChangeNotifier {
   Future<void> createTask({
     required String userId,
     required String title,
+    String? id,
     String? description,
     required int difficulty,
     required DateTime deadline,
@@ -70,7 +71,7 @@ class TaskProvider extends ChangeNotifier {
     String? assignedUserName,
   }) async {
     final task = TaskModel(
-      id: _uuid.v4(),
+      id: id ?? _uuid.v4(),
       title: title,
       description: description,
       difficulty: difficulty,

@@ -413,11 +413,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
             // ── top section ────────────────────────────
             Text(
               team.team?.name ?? 'Personal',
@@ -442,48 +446,57 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             const SizedBox(height: 28),
 
             // ── circular progress ─────────────────────
-            Center(
-              child: SizedBox(
-                width: 140,
-                height: 140,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CircularProgressIndicator(
-                      value: _progressValue,
-                      strokeWidth: 10,
-                      backgroundColor: const Color(0xFF1E2235),
-                      valueColor: AlwaysStoppedAnimation<Color>(_ringColor),
-                    ),
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _localStatus == TaskStatus.completed
-                                ? '100%'
-                                : '$_progressPercent%',
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w700,
-                              color: _ringColor,
-                            ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final ringSize =
+                    MediaQuery.of(context).size.width * 0.38;
+                return Center(
+                  child: SizedBox(
+                    width: ringSize,
+                    height: ringSize,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CircularProgressIndicator(
+                          value: _progressValue,
+                          strokeWidth: 10,
+                          backgroundColor: const Color(0xFF1E2235),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(_ringColor),
+                        ),
+                        Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FittedBox(
+                                child: Text(
+                                  _localStatus == TaskStatus.completed
+                                      ? '100%'
+                                      : '$_progressPercent%',
+                                  style: TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w700,
+                                    color: _ringColor,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _localStatus == TaskStatus.completed
+                                    ? 'done'
+                                    : 'complete',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF848A94),
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            _localStatus == TaskStatus.completed
-                                ? 'done'
-                                : 'complete',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF848A94),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
 
             const SizedBox(height: 28),
@@ -606,13 +619,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             _SectionTitle('Activity'),
             const SizedBox(height: 10),
             _buildTimeline(),
+                  ],
+                ),
+              ),
+            ),
+            if (currentUser != null) _buildBottomBar(currentUser),
           ],
         ),
       ),
-      // ── bottom button ─────────────────────────────
-      bottomNavigationBar: currentUser == null
-          ? const SizedBox(height: 0)
-          : _buildBottomBar(currentUser),
     );
   }
 
@@ -620,17 +634,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     // Case 1: Already completed
     if (_localStatus == TaskStatus.completed) {
       return _bottomContainer(
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+          mainAxisSize: MainAxisSize.min,
+          children: const [
             Icon(Icons.check_circle, color: Color(0xFF22C55E), size: 20),
             SizedBox(width: 8),
-            Text(
-              'Task Completed',
-              style: TextStyle(
-                color: Color(0xFF22C55E),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                'Task Completed',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: TextStyle(
+                  color: Color(0xFF22C55E),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -645,18 +665,24 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       return _bottomContainer(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.info_outline,
               color: const Color(0xFF848A94).withValues(alpha: 0.7),
               size: 16,
             ),
-            const SizedBox(width: 8),
-            Text(
-              'Only assigned members can complete this task',
-              style: TextStyle(
-                color: const Color(0xFF848A94).withValues(alpha: 0.7),
-                fontSize: 13,
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Only assigned members can complete this task',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: TextStyle(
+                  color: const Color(0xFF848A94).withValues(alpha: 0.7),
+                  fontSize: 13,
+                ),
               ),
             ),
           ],
@@ -675,14 +701,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       return _bottomContainer(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.person_outline,
                 color: Color(0xFF848A94), size: 16),
             const SizedBox(width: 8),
-            Text(
-              'Assigned to '
-              '${widget.task.assignedUserName ?? "another member"}',
-              style: const TextStyle(color: Color(0xFF848A94), fontSize: 13),
+            Flexible(
+              child: Text(
+                'Assigned to '
+                '${widget.task.assignedUserName ?? "another member"}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: const TextStyle(
+                    color: Color(0xFF848A94), fontSize: 13),
+              ),
             ),
           ],
         ),
@@ -704,6 +737,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           children: [
             Text(
               'Complete all subtasks first',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.4),
                 fontSize: 13,
@@ -712,6 +748,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             const SizedBox(height: 4),
             Text(
               '$done of $total done',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
               style: const TextStyle(
                 color: Color(0xFF3580FF),
                 fontSize: 12,
@@ -729,18 +768,24 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return GestureDetector(
       onTap: _completeTask,
       child: _bottomContainer(
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+          mainAxisSize: MainAxisSize.min,
+          children: const [
             Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
             SizedBox(width: 8),
-            Text(
-              'Mark as Complete',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.3,
+            Flexible(
+              child: Text(
+                'Mark as Complete',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
               ),
             ),
           ],
@@ -758,25 +803,28 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     required Color borderColor,
     bool isActive = false,
   }) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor, width: isActive ? 0 : 1),
-        boxShadow: isActive
-            ? [
-                BoxShadow(
-                  color: const Color(0xFF22C55E).withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : null,
+    return SafeArea(
+      top: false,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor, width: isActive ? 0 : 1),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 
@@ -1203,8 +1251,9 @@ class _InfoCard extends StatelessWidget {
         border: Border.all(color: AppColors.border, width: 0.5),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          child,
+          FittedBox(child: child),
           const SizedBox(height: 4),
           Text(
             label,
@@ -1213,6 +1262,8 @@ class _InfoCard extends StatelessWidget {
               fontSize: 10,
             ),
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
