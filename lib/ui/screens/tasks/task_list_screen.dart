@@ -6,9 +6,8 @@ import '../../../core/utils/date_utils.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/task_model.dart';
 import '../../../providers/activity_provider.dart';
+import '../../../data/models/user_model.dart';
 import '../../../providers/auth_provider.dart';
-import '../../../providers/challenge_provider.dart';
-import '../../../providers/gamification_provider.dart';
 import '../../../providers/task_provider.dart';
 import '../../../providers/team_provider.dart';
 import '../../widgets/task_progress_ring.dart';
@@ -465,6 +464,7 @@ class _TaskCardState extends State<_TaskCard> {
 
     switch (task.status) {
       case TaskStatus.pending:
+        if (currentUser.role == UserRole.teamLead) return const SizedBox.shrink();
         if (!canAct) return _lockedBadge();
         return _actionButton(
           label: 'Start',
@@ -490,26 +490,10 @@ class _TaskCardState extends State<_TaskCard> {
         );
 
       case TaskStatus.inProgress:
-        if (!canAct) return _lockedBadge();
-        return _actionButton(
-          label: 'Complete',
-          icon: Icons.check_rounded,
-          color: const Color(0xFF22C55E),
-          onTap: () async {
-            await _complete(context);
-          },
-        );
+        return const SizedBox.shrink();
 
       case TaskStatus.overdue:
-        if (!canAct) return _lockedBadge();
-        return _actionButton(
-          label: 'Late Done',
-          icon: Icons.check_rounded,
-          color: const Color(0xFFEF4444),
-          onTap: () async {
-            await _complete(context);
-          },
-        );
+        return const SizedBox.shrink();
 
       case TaskStatus.completed:
         return _completedBadge();
@@ -567,408 +551,26 @@ class _TaskCardState extends State<_TaskCard> {
 
   Widget _completedBadge() => Container(
         padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: const Color(0xFF22C55E).withValues(alpha: 0.08),
-          borderRadius: const BorderRadius.all(Radius.circular(8)),
+          color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: const Color(0xFF22C55E).withValues(alpha: 0.4)),
         ),
         child: const Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.check_circle_rounded,
-              color: Color(0xFF22C55E), size: 12),
-          SizedBox(width: 3),
+          Icon(Icons.check_circle,
+              color: Color(0xFF22C55E), size: 14),
+          SizedBox(width: 4),
           Text('Done',
               style: TextStyle(
                 fontFamily: 'Poppins',
-                fontSize: 10,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
                 color: Color(0xFF22C55E),
               )),
         ]),
       );
-
-  // ── Complete action ─────────────────────────────────────────────
-
-  Future<void> _complete(BuildContext ctx) async {
-    final auth = ctx.read<AuthProvider>();
-    if (auth.user == null) return;
-
-    // Capture all providers before the first await so we never
-    // access BuildContext across an async gap.
-    final user = auth.user!;
-    final teamProv = ctx.read<TeamProvider>();
-    final taskProv = ctx.read<TaskProvider>();
-    final gamProv = ctx.read<GamificationProvider>();
-    final cp = user.hasTeam ? ctx.read<ChallengeProvider>() : null;
-    final activityProv = ctx.read<ActivityProvider>();
-
-    try {
-      final isTeamTask = user.hasTeam && task.teamId.isNotEmpty;
-      final TaskModel completed;
-      if (isTeamTask) {
-        completed = await teamProv.completeTask(task.id, user);
-        await teamProv.updateTaskProgress(task.id, 100, 'completed');
-      } else {
-        completed = await taskProv.completeTask(task.id);
-      }
-      final result = await gamProv.handleCompletion(completed, user);
-      if (gamProv.user != null && ctx.mounted) {
-        ctx.read<AuthProvider>().refresh(gamProv.user!);
-      }
-      await activityProv.onTaskCompleted(user, completed);
-
-      if (user.hasTeam && cp != null) {
-        for (final c in cp.challenges.where((c) => c.isActive)) {
-          await cp.addXp(
-            user.teamId!,
-            c.id,
-            user.id,
-            user.name,
-            result.xpEarned,
-          );
-          await cp.logActivity(
-            user.teamId!,
-            c.id,
-            user.name,
-            completed.title,
-            completed.xpEarned,
-          );
-        }
-      }
-
-      if (ctx.mounted) {
-        final status = gamProv.lastCompletionStatus;
-        final isEarlyBird = gamProv.lastIsEarlyBird;
-        final streakReset = gamProv.lastStreakReset;
-        final daysLate = gamProv.lastDaysLate;
-
-        String mainMessage;
-        Color snackColor;
-
-        if (isEarlyBird) {
-          mainMessage =
-              '🐦 Early Bird! +${result.xpEarned} XP  '
-              '🪙 +${result.coinsEarned} coins (+10% bonus)';
-          snackColor = const Color(0xFF22C55E);
-        } else if (status == 'on_time') {
-          mainMessage =
-              '✅ +${result.xpEarned} XP  '
-              '🪙 +${result.coinsEarned} coins';
-          snackColor = const Color(0xFF3580FF);
-        } else if (status == 'very_late') {
-          mainMessage =
-              '⚠️ Completed ${daysLate}d late — '
-              'no XP or coins. Streak reset!';
-          snackColor = const Color(0xFFEF4444);
-        } else {
-          mainMessage =
-              '⏰ Completed late — '
-              'no XP or coins. Streak reset.';
-          snackColor = const Color(0xFFFF6B35);
-        }
-
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    mainMessage,
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFF191D30),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: snackColor.withValues(alpha: 0.6),
-                width: 1.5,
-              ),
-            ),
-            margin: const EdgeInsets.all(12),
-            duration: Duration(seconds: isEarlyBird ? 4 : 3),
-          ),
-        );
-
-        if (streakReset && (gamProv.user?.streakDays ?? 0) == 0) {
-          await Future.delayed(const Duration(milliseconds: 500));
-          if (ctx.mounted) {
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Text('💔', style: TextStyle(fontSize: 18)),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Streak Lost',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          Text(
-                            'Complete tasks on time to rebuild your streak!',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              color: Color(0xFF848A94),
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                backgroundColor: const Color(0xFF191D30),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(
-                    color: Color(0xFFEF4444),
-                    width: 1.5,
-                  ),
-                ),
-                margin: const EdgeInsets.all(12),
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        }
-
-        if (isEarlyBird) {
-          await Future.delayed(const Duration(milliseconds: 800));
-          if (ctx.mounted) {
-            _showEarlyBirdPopup(ctx);
-          }
-        }
-      }
-
-      // Check for level up AFTER completion
-      if (gamProv.justLeveledUp && ctx.mounted) {
-        await Future.delayed(const Duration(milliseconds: 800));
-        if (ctx.mounted) {
-          _showLevelUpDialog(ctx, gamProv.newLevel);
-        }
-      }
-    } catch (e) {
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-          content: Text(e.toString(),
-              style: const TextStyle(fontFamily: 'Poppins')),
-          backgroundColor: const Color(0xFFEF4444),
-        ));
-      }
-    }
-  }
-
-  void _showEarlyBirdPopup(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF191D30),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: const Color(0xFF22C55E).withValues(alpha: 0.6),
-              width: 1.5,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('🐦', style: TextStyle(fontSize: 44)),
-              const SizedBox(height: 8),
-              const Text(
-                'Early Bird!',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Color(0xFF22C55E),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'You finished ahead of schedule',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Color(0xFF848A94),
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF22C55E).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  '+10% Coin Bonus Applied! 🪙',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color(0xFF22C55E),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF22C55E),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'Nice!',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showLevelUpDialog(BuildContext context, int newLevel) {
-    final titles = {
-      2: ('Code Dev', '💻'),
-      3: ('Code Apprentice', '📚'),
-      4: ('Code Knight', '⚔️'),
-      5: ('Code Master', '🏆'),
-      6: ('Dark Hacker', '🔐'),
-      8: ('Code Wizard', '🧙'),
-      10: ('Cyber Bot', '🤖'),
-      12: ('Code Ninja', '🥷'),
-      15: ('Galaxy Brain', '🌌'),
-    };
-
-    final title = titles.entries
-        .lastWhere(
-          (e) => newLevel >= e.key,
-          orElse: () => const MapEntry(1, ('Rookie', '🌱')))
-        .value;
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-              color: const Color(0xFF191D30),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                  color: const Color(0xFFFFB800).withValues(alpha: 0.6),
-                  width: 2),
-              boxShadow: [
-                BoxShadow(
-                    color: const Color(0xFFFFB800).withValues(alpha: 0.2),
-                    blurRadius: 30,
-                    spreadRadius: 5),
-              ]),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(title.$2, style: const TextStyle(fontSize: 60)),
-              const SizedBox(height: 12),
-              const Text(
-                '⬆ LEVEL UP!',
-                style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color(0xFFFFB800),
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Level $newLevel',
-                style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                title.$1,
-                style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color(0xFF3580FF),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Keep completing tasks to reach\nthe next level!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color(0xFF848A94),
-                    fontSize: 12),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFB800),
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 12)),
-                  child: const Text(
-                    'Awesome!',
-                    style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {

@@ -386,67 +386,89 @@ class _ItemCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: locked ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          color: const Color(0xFF191D30),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: equipped
-                ? const Color(0xFF3580FF)
-                : locked
-                    ? const Color(0xFF2A2E42)
-                    : const Color(0xFF252A3D),
-            width: equipped ? 1.5 : 1,
-          ),
-        ),
-        child: Opacity(
-          opacity: locked ? 0.5 : 1.0,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(child: _ItemPreview(item: item, size: 64)),
-                const SizedBox(height: 8),
-                Text(
-                  item.name,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const Spacer(),
-                if (equipped)
-                  _badge('EQUIPPED', const Color(0xFF3580FF))
-                else if (owned)
-                  _badge('OWNED', const Color(0xFF22C55E))
-                else if (locked)
-                  _badge('Lv ${item.requiredLevel}+',
-                      const Color(0xFF848A94))
-                else
-                  Row(children: [
-                    const Icon(Icons.monetization_on_rounded,
-                        color: Color(0xFFFFD700), size: 13),
-                    const SizedBox(width: 3),
-                    Text(
-                      item.price == 0 ? 'Free' : '${item.price}',
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFFFD700),
-                      ),
+      child: Stack(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              color: const Color(0xFF191D30),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: equipped
+                    ? const Color(0xFF3580FF)
+                    : locked
+                        ? const Color(0xFF2A2E42)
+                        : const Color(0xFF252A3D),
+                width: equipped ? 1.5 : 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(child: _ItemPreview(item: item, size: 64)),
+                  const SizedBox(height: 8),
+                  Text(
+                    item.name,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
                     ),
-                  ]),
-              ],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const Spacer(),
+                  if (equipped)
+                    _badge('EQUIPPED', const Color(0xFF3580FF))
+                  else if (owned)
+                    _badge('OWNED', const Color(0xFF22C55E))
+                  else
+                    Row(children: [
+                      const Icon(Icons.monetization_on_rounded,
+                          color: Color(0xFFFFD700), size: 13),
+                      const SizedBox(width: 3),
+                      Text(
+                        item.price == 0 ? 'Free' : '${item.price}',
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFFFD700),
+                        ),
+                      ),
+                    ]),
+                ],
+              ),
             ),
           ),
-        ),
+          if (locked)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.lock, color: Colors.white54, size: 28),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Lv.${item.requiredLevel}',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

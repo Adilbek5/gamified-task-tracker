@@ -214,6 +214,10 @@ class TeamProvider extends ChangeNotifier {
   }
 
   Future<void> startTask(String taskId, UserModel user) async {
+    if (user.role == UserRole.teamLead) {
+      debugPrint('[TeamProvider] Team Lead cannot start tasks — blocked');
+      return;
+    }
     final task = _tasks.firstWhere(
       (t) => t.id == taskId,
       orElse: () => throw Exception('Task not found'),
@@ -241,7 +245,20 @@ class TeamProvider extends ChangeNotifier {
 
   Future<TaskModel> completeTask(
       String taskId, UserModel completer) async {
-    final task = _tasks.firstWhere((t) => t.id == taskId);
+    if (completer.role == UserRole.teamLead) {
+      debugPrint('[TeamProvider] Team Lead attempted to complete task — blocked');
+      throw Exception('Team Lead cannot complete tasks');
+    }
+    final task = _tasks.firstWhere(
+      (t) => t.id == taskId,
+      orElse: () => throw Exception('Task not found: $taskId'),
+    );
+    final assigned = task.assignedUserId;
+    final isAssigned = assigned == null || assigned.isEmpty || assigned == completer.id;
+    if (!isAssigned) {
+      debugPrint('[TeamProvider] Wrong user attempted to complete assigned task');
+      throw Exception('This task is not assigned to you');
+    }
     final now = DateTime.now();
     final onTime = now.isBefore(task.deadline);
     final updated = task.copyWith(

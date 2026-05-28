@@ -136,23 +136,29 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           _subtasks = list;
         }
       });
-      if (widget.task.teamId.isNotEmpty) {
-        final total = _subtasks.length;
-        final done = _subtasks.where((s) => s.isCompleted).length;
-        final newProgress =
-            total > 0 ? ((done / total) * 100).round() : 0;
-        // Use live status from provider — _localStatus may lag behind Firebase
-        final liveTask = context
-            .read<TeamProvider>()
-            .tasks
-            .firstWhere(
-              (t) => t.id == widget.task.id,
-              orElse: () => widget.task,
-            );
-        context.read<TeamProvider>().updateTaskProgress(
-            widget.task.id, newProgress, liveTask.status.name);
-      }
+      _onSubtaskToggled();
     }
+  }
+
+  void _onSubtaskToggled() {
+    final total = _subtasks.length;
+    if (total == 0) return;
+    final done = _subtasks.where((s) => s.isCompleted).length;
+    final newProgress = ((done / total) * 100).round();
+
+    if (widget.task.teamId.isNotEmpty) {
+      final liveTask = context
+          .read<TeamProvider>()
+          .tasks
+          .firstWhere(
+            (t) => t.id == widget.task.id,
+            orElse: () => widget.task,
+          );
+      context.read<TeamProvider>().updateTaskProgress(
+          widget.task.id, newProgress, liveTask.status.name);
+    }
+
+    setState(() {}); // rebuild ring + complete button
   }
 
   Future<void> _deleteSubtask(SubtaskModel sub) async {
@@ -165,7 +171,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   // ── complete task ───────────────────────────────────────
 
-  Future<void> _complete() async {
+  Future<void> _completeTask() async {
     // Guard: all subtasks must be ticked first
     if (_subtasks.isNotEmpty && !_subtasks.every((s) => s.isCompleted)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -280,8 +286,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final team = context.watch<TeamProvider>();
     final auth = context.watch<AuthProvider>();
     final currentUser = auth.user;
-
-    final canComplete = _localStatus != TaskStatus.completed;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D14),
@@ -440,25 +444,41 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             // ── circular progress ─────────────────────
             Center(
               child: SizedBox(
-                width: 120,
-                height: 120,
+                width: 140,
+                height: 140,
                 child: Stack(
-                  alignment: Alignment.center,
+                  fit: StackFit.expand,
                   children: [
                     CircularProgressIndicator(
                       value: _progressValue,
-                      strokeWidth: 8,
-                      backgroundColor: const Color(0xFF2A2D3E),
+                      strokeWidth: 10,
+                      backgroundColor: const Color(0xFF1E2235),
                       valueColor: AlwaysStoppedAnimation<Color>(_ringColor),
                     ),
-                    Text(
-                      _localStatus == TaskStatus.completed
-                          ? '100%'
-                          : '$_progressPercent%',
-                      style: TextStyle(
-                        color: _ringColor,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _localStatus == TaskStatus.completed
+                                ? '100%'
+                                : '$_progressPercent%',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w700,
+                              color: _ringColor,
+                            ),
+                          ),
+                          Text(
+                            _localStatus == TaskStatus.completed
+                                ? 'done'
+                                : 'complete',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF848A94),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -590,64 +610,173 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         ),
       ),
       // ── bottom button ─────────────────────────────
-      bottomNavigationBar: _localStatus == TaskStatus.completed
-          ? Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-              color: const Color(0xFF0D0D14),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF22C55E).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                      color: const Color(0xFF22C55E).withValues(alpha: 0.4)),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.check_circle,
-                        color: Color(0xFF22C55E), size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Task Completed',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Color(0xFF22C55E),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
+      bottomNavigationBar: currentUser == null
+          ? const SizedBox(height: 0)
+          : _buildBottomBar(currentUser),
+    );
+  }
+
+  Widget _buildBottomBar(UserModel user) {
+    // Case 1: Already completed
+    if (_localStatus == TaskStatus.completed) {
+      return _bottomContainer(
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle, color: Color(0xFF22C55E), size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Task Completed',
+              style: TextStyle(
+                color: Color(0xFF22C55E),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
               ),
-            )
-          : canComplete
-              ? Container(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-                  color: const Color(0xFF0D0D14),
-                  child: SizedBox(
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                      ),
-                      onPressed: _complete,
-                      child: const Text(
-                        'Mark as Complete',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-              : null,
+            ),
+          ],
+        ),
+        color: const Color(0xFF22C55E).withValues(alpha: 0.1),
+        borderColor: const Color(0xFF22C55E).withValues(alpha: 0.3),
+      );
+    }
+
+    // Case 2: Team Lead — always show this
+    if (user.role == UserRole.teamLead) {
+      return _bottomContainer(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.info_outline,
+              color: const Color(0xFF848A94).withValues(alpha: 0.7),
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Only assigned members can complete this task',
+              style: TextStyle(
+                color: const Color(0xFF848A94).withValues(alpha: 0.7),
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        color: const Color(0xFF1E2235),
+        borderColor: const Color(0xFF2A2D3E),
+      );
+    }
+
+    // Case 3: Assigned to someone else
+    final assigned = widget.task.assignedUserId;
+    final isOtherPerson =
+        assigned != null && assigned.isNotEmpty && assigned != user.id;
+
+    if (isOtherPerson) {
+      return _bottomContainer(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.person_outline,
+                color: Color(0xFF848A94), size: 16),
+            const SizedBox(width: 8),
+            Text(
+              'Assigned to '
+              '${widget.task.assignedUserName ?? "another member"}',
+              style: const TextStyle(color: Color(0xFF848A94), fontSize: 13),
+            ),
+          ],
+        ),
+        color: const Color(0xFF1E2235),
+        borderColor: const Color(0xFF2A2D3E),
+      );
+    }
+
+    // Case 4: Subtasks not all done yet
+    final allDone =
+        _subtasks.isEmpty || _subtasks.every((s) => s.isCompleted);
+
+    if (!allDone) {
+      final done = _subtasks.where((s) => s.isCompleted).length;
+      final total = _subtasks.length;
+      return _bottomContainer(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Complete all subtasks first',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$done of $total done',
+              style: const TextStyle(
+                color: Color(0xFF3580FF),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        color: const Color(0xFF1E2235),
+        borderColor: const Color(0xFF2A2D3E),
+      );
+    }
+
+    // Case 5: CAN complete — active button
+    return GestureDetector(
+      onTap: _completeTask,
+      child: _bottomContainer(
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Mark as Complete',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
+        color: const Color(0xFF22C55E),
+        borderColor: const Color(0xFF22C55E),
+        isActive: true,
+      ),
+    );
+  }
+
+  Widget _bottomContainer({
+    required Widget child,
+    required Color color,
+    required Color borderColor,
+    bool isActive = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: isActive ? 0 : 1),
+        boxShadow: isActive
+            ? [
+                BoxShadow(
+                  color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: child,
     );
   }
 
@@ -949,25 +1078,38 @@ class _SubtaskTile extends StatelessWidget {
       child: Row(
         children: [
           GestureDetector(
-            onTap: onToggle,
+            onTap: isTeamLead
+                ? () => ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Assign this task to a team member'
+                          ' to track subtask progress',
+                        ),
+                        backgroundColor: Color(0xFF2A2D3E),
+                        duration: Duration(seconds: 2),
+                      ),
+                    )
+                : onToggle,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 20,
-              height: 20,
+              width: 22,
+              height: 22,
               decoration: BoxDecoration(
                 color: subtask.isCompleted
-                    ? AppColors.success
+                    ? const Color(0xFF22C55E)
                     : Colors.transparent,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                  color: subtask.isCompleted
-                      ? AppColors.success
-                      : AppColors.border,
+                  color: isTeamLead
+                      ? const Color(0xFF848A94).withValues(alpha: 0.3)
+                      : subtask.isCompleted
+                          ? const Color(0xFF22C55E)
+                          : const Color(0xFF3580FF).withValues(alpha: 0.5),
                   width: 1.5,
                 ),
               ),
               child: subtask.isCompleted
-                  ? const Icon(Icons.check, size: 13, color: Colors.white)
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
                   : null,
             ),
           ),
